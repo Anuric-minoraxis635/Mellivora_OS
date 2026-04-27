@@ -1,5 +1,41 @@
 # Mellivora OS - Changelog
 
+## v7.5.0 - BASIC Compiler & Interpreter Upgrade
+
+### Added
+
+- **`basicc`** — new BASIC-to-x86 compiler. Compiles a BASIC source
+  file (`.bas`) to a flat x86-32 native binary that runs directly on
+  Mellivora OS. Usage: `basicc source.bas output.bin`. Supports:
+  - Numeric variables A–Z (32-bit integer)
+  - Full arithmetic: `+`, `-`, `*`, `/`, `MOD`
+  - Bitwise / logical: `AND`, `OR`, `XOR`, `NOT`
+  - Relational comparisons: `=`, `<>`, `<`, `>`, `<=`, `>=`
+  - `PRINT` with string literals and numeric expressions, `;` and `,` separators
+  - `INPUT` with optional prompt string
+  - `LET var = expr` and bare `var = expr` assignment
+  - `IF ... THEN ... [ELSE ...]` with inline statements or line numbers
+  - `GOTO` / `GOSUB` / `RETURN` (with forward-reference fixup table)
+  - `FOR var = start TO end [STEP step]` / `NEXT` (up to 16 nested loops)
+  - `WHILE ... WEND` (up to 64 nested)
+  - `END`, `STOP`, `CLS`, `BEEP`, `SLEEP expr`
+  - Multi-statement lines via `:`
+  - `REM` comments
+  - Output binary is a self-contained flat x86 executable starting at
+    `0x200000`; no runtime library required.
+
+- **`samples/fib.bas`** — Fibonacci sequence sample program for `basicc`.
+- **`samples/hello.bas`** — minimal Hello World sample for `basicc`.
+
+### Changed
+
+- **`basic`** (v3.1) — upgraded the GW-BASIC interpreter:
+  - Added `TRON` / `TROFF` — execution trace mode prints `[linenum]`
+    before each statement.
+  - Added `STOP` / `CONT` — stop mid-program and continue.
+  - Added `HEX$(n)` and `OCT$(n)` string functions.
+  - Updated `HELP` listing and version banner to 3.1.
+
 ## v7.4.0 - BASIC Expansion
 
 ### Changed
