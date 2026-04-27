@@ -56,13 +56,6 @@ KEY_ESC   equ 0x1B             ; Escape
 KEY_ENTER equ 0x0D             ; Enter / carriage-return
 KEY_SPACE equ 0x20             ; Space
 
-%ifndef KEY_UP
-KEY_UP    equ 0x80             ; scancode 0x48 → translated 0x80
-KEY_DOWN  equ 0x81             ; scancode 0x50 → translated 0x81
-KEY_LEFT  equ 0x82             ; scancode 0x4B → translated 0x82
-KEY_RIGHT equ 0x83             ; scancode 0x4D → translated 0x83
-%endif
-
 KEY_W     equ 'w'              ; 0x77
 KEY_A     equ 'a'              ; 0x61
 KEY_S     equ 's'              ; 0x73

@@ -85,6 +85,13 @@ shell_main:
 .no_motd:
 
 .prompt:
+        ; If cursor is not at column 0, emit a newline so the prompt
+        ; always appears at the start of a fresh line.
+        cmp dword [vga_cursor_x], 0
+        je .prompt_col0
+        mov al, 0x0A
+        call vga_putchar
+.prompt_col0:
         ; Print prompt with full current directory path
         mov byte [vga_color], COLOR_PROMPT
         mov esi, shell_prompt_pre

@@ -71,9 +71,9 @@ Mellivora organizes files into subdirectories:
 
 ```text
 /
-├── bin/          134 utility programs (edit, grep, sort, tcc, wget, nc, ...)
+├── bin/          126 utility programs (edit, grep, sort, tcc, wget, nc, ...)
 ├── games/         42 games (snake, tetris, 2048, galaga, chess, wordle, ...)
-├── samples/       17 source files (hello.c, fib.c, hello.pl, fizzbuzz.pl, ...)
+├── samples/       19 source files (hello.c, fib.c, hello.pl, fizzbuzz.pl, hello.bas, ...)
 ├── docs/           text files (readme.txt, license.txt, notes.txt, ...)
 └── script.bat      Example batch script
 ```

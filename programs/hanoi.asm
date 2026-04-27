@@ -43,10 +43,10 @@ start:
         mov dword [num_disks], MAX_DISKS
 
 .init:
-        ; Initialize pegs: peg A has all disks, B and C empty
+        ; Initialize pegs: peg B (center) has all disks, A and C empty
         ; Disks are numbered 1..n (1=smallest)
         ; peg_X: [count, disk_n, disk_n-1, ..., disk_1] (bottom to top)
-        mov edi, peg_a
+        mov edi, peg_b
         mov eax, [num_disks]
         mov [edi], eax          ; count
         lea edi, [edi + 4]
@@ -58,8 +58,8 @@ start:
         dec ecx
         jnz .place
 
-        ; Clear peg B and C
-        mov dword [peg_b], 0
+        ; Clear peg A and C
+        mov dword [peg_a], 0
         mov dword [peg_c], 0
         mov dword [move_count], 0
 

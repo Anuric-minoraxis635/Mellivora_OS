@@ -751,7 +751,7 @@ GAME_PROGRAMS = {
     'neurovault', 'nim', 'outbreak', 'pacman', 'piano', 'pipes', 'pong',
     'iago', 'puzzle15', 'rain', 'rogue', 'simon', 'snake',
     'sokoban', 'solitaire', 'starfield', 'sudoku', 'tetris', 'tictactoe',
-    'wordle',
+    'wordle', 'peggame',
 }
 
 # Everything else in programs/ goes to /bin

@@ -989,7 +989,7 @@ All syscalls are invoked via `INT 0x80`. Register conventions:
 | 93 | `SYS_GETMTIME` | EBX=filename | EAX=mtime, ECX=ctime |
 | 94 | `SYS_SETMTIME` | EBX=filename, ECX=timestamp (0=now) | EAX=0/-1 |
 
-**Total: 94 syscalls defined (0–94, with gaps at 82–87).**
+**Total: 95 syscalls defined (0–94, no gaps).**
 
 ---
 

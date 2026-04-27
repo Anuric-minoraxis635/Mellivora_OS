@@ -202,21 +202,14 @@ place_ships:
         ; Random position and direction
         call rand
         xor edx, edx
-        push eax
-        mov eax, edx
-        pop eax
-        xor edx, edx
         mov edi, GRID_SIZE
-        div edi                 ; EAX=row, EDX unused
-        xor edx, edx
-        push eax
+        div edi                 ; EDX = rand % GRID_SIZE → row
+        mov [.row], edx
         call rand
-        mov edi, GRID_SIZE
         xor edx, edx
-        div edi                 ; EAX=col
-        mov [.col], eax
-        pop eax
-        mov [.row], eax
+        mov edi, GRID_SIZE
+        div edi                 ; EDX = rand % GRID_SIZE → col
+        mov [.col], edx
         call rand
         and eax, 1
         mov [.horiz], eax

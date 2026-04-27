@@ -4,14 +4,14 @@
 
 **A bare-metal 32-bit x86 operating system written in NASM assembly.**
 
-Mellivora OS is a from-scratch hobby OS that boots on real x86 hardware or in QEMU. It includes a custom HBFS filesystem, ring 3 user-mode execution, a DOS-inspired interactive shell with POSIX features, 94 syscalls, priority-based preemptive scheduling, signal support, an in-OS Tiny C Compiler, 178 assembly programs, and 17 bundled samples (C and Perl).
+Mellivora OS is a from-scratch hobby OS that boots on real x86 hardware or in QEMU. It includes a custom HBFS filesystem, ring 3 user-mode execution, a DOS-inspired interactive shell with POSIX features, 95 syscalls, priority-based preemptive scheduling, signal support, an in-OS Tiny C Compiler, 178 assembly programs, and 19 bundled samples (C, Perl, and BASIC).
 
 > New to the project? Start with the [Installation Guide](docs/INSTALL.md), then try the [Tutorial](docs/TUTORIAL.md) or browse the [Technical Reference](docs/TECHNICAL_REFERENCE.md).
 
 ## 🦡 At a Glance
 
 - **Boot path:** 3-stage BIOS boot flow into 32-bit protected mode
-- **Userland:** 90+ shell commands, 176 assembly programs, and 17 bundled samples (C and Perl)
+- **Userland:** 90+ shell commands, 178 assembly programs, and 19 bundled samples (C, Perl, and BASIC)
 - **Core pieces:** HBFS filesystem, ELF32 loader, PMM allocator, serial/VGA/ATA drivers
 - **Developer-ready:** API docs, programming guide, regression tests, and release packaging
 
@@ -23,7 +23,7 @@ Mellivora OS is a from-scratch hobby OS that boots on real x86 hardware or in QE
 
 - **32-bit protected mode** with flat memory model
 - **Ring 0 / Ring 3** privilege separation — programs run in user mode
-- **94 syscalls** via `INT 0x80` (POSIX-inspired: open, read, write, close, seek, stat, mkdir, signals, priorities, ...)
+- **95 syscalls** via `INT 0x80` (POSIX-inspired: open, read, write, close, seek, stat, mkdir, signals, priorities, ...)
 - **Priority-based preemptive scheduler** — 4 priority levels (HIGH/NORMAL/LOW/IDLE), 64 concurrent tasks
 - **POSIX-style signals** — SIGINT, SIGKILL, SIGTERM, SIGTSTP, SIGCONT, SIGUSR1/2, SIGALRM, SIGCHLD
 - **Process groups** — PGID support for job control
@@ -71,16 +71,16 @@ Mellivora OS is a from-scratch hobby OS that boots on real x86 hardware or in QE
 - **Serial port** (COM1 at 115200 baud) for debug output
 - **RTC** real-time clock for date/time
 
-### Programs (176 assembly + 17 bundled samples)
+### Programs (178 assembly + 19 bundled samples)
 
 - **Games (42)**: Snake, Tetris, Minesweeper, Sokoban, 2048, Galaga, Pac-Man, Frogger, Game of Life, Maze, Kingdom, Outbreak, Neurovault, Chess, Checkers, Blackjack, Pong, Wordle, Rogue, and more
 - **HBU (Honey Badger Utilities)**: grep, sort, sed, tr, wc, cut, head, tail, diff, find, uniq, rev, paste, xargs, and more
 - **Tools**: Text editor, hex viewer, file pager, CSV viewer, dual-pane file manager (burrow)
 - **Demos**: Mandelbrot renderer, piano, banner, colors, calendar, calculator, Doom fire effect
-- **Languages**: TCC (Tiny C Compiler), BASIC interpreter, Brainfuck interpreter, Perl interpreter, Forth interpreter
+- **Languages**: TCC (Tiny C Compiler), BASIC interpreter (`basic` + `basicc` compiler), Brainfuck interpreter, Perl interpreter, Forth interpreter
 - **Network tools**: ping, wget, nc, ftp, telnet, irc, gopher, dig, traceroute, whois, daytime
-- **API Libraries**: 10 reusable `.inc` libraries (string, I/O, math, VGA, memory, data structures, net, GUI, sprite, more)
-- **Samples**: 12 C programs + 5 Perl scripts in `/samples`
+- **API Libraries**: 17 reusable `.inc` libraries in `programs/lib/` (string, I/O, math, VGA, memory, data, net, GUI, VBE, font, audio, highscore, and more)
+- **Samples**: 11 C programs + 6 Perl scripts + 2 BASIC scripts in `/samples`
 
 ---
 
@@ -138,9 +138,9 @@ Lair:/> perl /samples/hello.pl # Run a Perl script
 
 ```text
 /
-├── bin/          134 utility programs (edit, grep, sort, tcc, wget, nc, ...)
+├── bin/          126 utility programs (edit, grep, sort, tcc, wget, nc, ...)
 ├── games/         42 games (snake, tetris, 2048, galaga, chess, wordle, ...)
-├── samples/       17 source files (hello.c, fib.c, hello.pl, fizzbuzz.pl, ...)
+├── samples/       19 source files (hello.c, fib.c, hello.pl, fizzbuzz.pl, hello.bas, ...)
 ├── docs/           text files (readme.txt, license.txt, notes.txt, ...)
 └── script.bat      Example batch script
 ```
@@ -153,10 +153,10 @@ Programs in `/bin` and `/games` are in the default PATH, so they run from any di
 Mellivora_OS/
 ├── boot.asm               Stage 1 MBR boot sector (512 bytes, 16-bit)
 ├── stage2.asm              Stage 2 loader (A20, E820, long mode switch)
-├── kernel.asm              Kernel entry + modular includes (13 files in `kernel/`)
+├── kernel.asm              Kernel entry + modular includes (22 files in `kernel/`)
 ├── Makefile                Build system (make full / make run / make debug)
 ├── populate.py             HBFS image populator with subdirectory support
-├── CHANGELOG.md            Version history (v1.0 → v7.0)
+├── CHANGELOG.md            Version history (v1.0 → v7.5.0)
 ├── README.md               This file
 ├── programs/               User-space assembly programs
 │   ├── syscalls.inc        Shared syscall constants and helpers
@@ -169,12 +169,13 @@ Mellivora_OS/
 │   ├── tcc.asm             Tiny C Compiler (subset)
 │   ├── grep.asm            Pattern search
 │   ├── sort.asm            Line sorting
-│   └── ...                 (176 programs total)
-├── samples/                C source files for TCC
-│   ├── hello.c, fib.c, primes.c, calc.c, matrix.c
-│   ├── hanoi.c, bf.c, wumpus.c, boxes.c, stars.c, echo.c
+│   └── ...                 (178 programs total)
+├── samples/                C, Perl, and BASIC source files
+│   ├── hello.c, fib.c, primes.c, calc.c, matrix.c, hanoi.c
+│   ├── bf.c, wumpus.c, boxes.c, stars.c, echo.c
 │   ├── hello.pl, factorial.pl, fizzbuzz.pl, guess.pl, strings.pl, arrays.pl
-│   └── ...                 (17 samples total)
+│   ├── hello.bas, fib.bas
+│   └── ...                 (19 samples total)
 ├── tests/                  Regression test suite
 │   ├── test_build.sh       Build-time checks
 │   └── test_hbfs.py        HBFS filesystem integrity checks
@@ -329,12 +330,12 @@ Mellivora_OS/
 
 | Metric | Value |
 | -------- | ------- |
-| Kernel source | Entry file + 20 modular include files |
-| Syscalls | 82 (via `INT 0x80`) |
+| Kernel source | Entry file + 22 modular include files |
+| Syscalls | 95 (via `INT 0x80`) |
 | Shell commands | 90+ built-ins, aliases, history (128 entries), tab completion |
-| User programs | 176 assembly apps (134 utilities + 42 games) |
-| Bundled samples | 17 (12 C + 5 Perl) in `/samples` |
-| API libraries | 9 reusable `.inc` modules in `programs/lib/` |
+| User programs | 178 assembly apps (124 utilities + 12 Burrows + 42 games) |
+| Bundled samples | 19 (11 C + 6 Perl + 2 BAS) in `/samples` |
+| API libraries | 17 reusable `.inc` modules in `programs/lib/` |
 | Disk image | 2 GB raw HBFS image |
 | HBFS root capacity | 455 files; 224 files per subdirectory |
 | Concurrent tasks | 64 (preemptive scheduler, 4 priority levels) |
