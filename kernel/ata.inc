@@ -77,7 +77,7 @@ ata_init:
         mov [ata_total_sectors + 4], eax
 
         mov byte [ata_present], 1
-        
+
         mov esi, msg_ata_ok
         call vga_print
 
@@ -325,6 +325,19 @@ ata_write_sectors_raw:
 
 ; ata_read_sectors_retry: EAX=LBA, ECX=count, EDI=dest, CF on error
 ata_read_sectors:
+        ; Phase 1.5: bounds-check LBA range against device size to keep a bad
+        ; caller from issuing reads beyond the disk (which the hardware will
+        ; usually error on, but better to fail fast and predictably).
+        push eax
+        push ecx
+        cmp eax, [ata_total_sectors]
+        jae .ars_oob
+        add eax, ecx
+        jc  .ars_oob               ; 32-bit LBA wrap
+        cmp eax, [ata_total_sectors]
+        ja  .ars_oob
+        pop ecx
+        pop eax
         push ecx
         push eax
         push edi
@@ -361,10 +374,26 @@ ata_read_sectors:
         pop ecx
         clc
         ret
+.ars_oob:
+        pop ecx
+        pop eax
+        stc
+        ret
 .arsr_tries: dd 0
 
 ; ata_write_sectors_retry: EAX=LBA, ECX=count, ESI=src, CF on error
 ata_write_sectors:
+        ; Phase 1.5: bounds-check LBA range against device size.
+        push eax
+        push ecx
+        cmp eax, [ata_total_sectors]
+        jae .aws_oob
+        add eax, ecx
+        jc  .aws_oob
+        cmp eax, [ata_total_sectors]
+        ja  .aws_oob
+        pop ecx
+        pop eax
         push ecx
         push eax
         push esi
@@ -399,5 +428,10 @@ ata_write_sectors:
         pop eax
         pop ecx
         clc
+        ret
+.aws_oob:
+        pop ecx
+        pop eax
+        stc
         ret
 .awsr_tries: dd 0

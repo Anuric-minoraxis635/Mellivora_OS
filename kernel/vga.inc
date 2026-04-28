@@ -4,18 +4,29 @@
 
 vga_init:
         ; Set default color and clear screen
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
+        mov byte [default_color], COLOR_DEFAULT
         mov dword [vga_cursor_x], 0
         mov dword [vga_cursor_y], 0
         call vga_clear
         call vga_update_cursor
         ret
 
+; Restore vga_color to user-selected default (preserves all regs)
+vga_reset_color:
+        push eax
+        mov al, [default_color]
+        mov [vga_color], al
+        pop eax
+        ret
+
 ; Clear screen (always uses default color)
 vga_clear:
+        push eax
         mov edi, VGA_BASE
-        mov byte [vga_color], COLOR_DEFAULT
-        mov ah, COLOR_DEFAULT
+        mov al, [default_color]
+        mov [vga_color], al
+        mov ah, al
         mov al, ' '
         mov ecx, VGA_WIDTH * VGA_HEIGHT
         cld
@@ -23,6 +34,7 @@ vga_clear:
         mov dword [vga_cursor_x], 0
         mov dword [vga_cursor_y], 0
         call vga_update_cursor
+        pop eax
         ret
 
 ; Print single character in AL

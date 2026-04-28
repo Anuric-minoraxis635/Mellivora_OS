@@ -48,6 +48,14 @@ VBE_DEFAULT_WIDTH       equ 1024
 VBE_DEFAULT_HEIGHT      equ 768
 VBE_DEFAULT_BPP         equ 32
 
+; Hard caps for user-supplied modes (Phase 1.1 hardening).
+; The framebuffer mapping is bounded by VBE_MAX_FB_PAGES so a hostile
+; or buggy program cannot make us page in arbitrary amounts of LFB.
+VBE_MAX_WIDTH           equ 1920
+VBE_MAX_HEIGHT          equ 1200
+VBE_MAX_FB_PAGES        equ 4096        ; 16 MB cap (covers 1920x1200x32 = 9.0 MB)
+VBE_MAX_DRAW_STRING     equ 4096        ; cap for SYS_FRAMEBUF/3 string length
+
 ; Fallback LFB address (QEMU/Bochs standard mapping)
 VBE_LFB_FALLBACK        equ 0xFD000000
 
@@ -113,9 +121,33 @@ vbe_init:
 ;---------------------------------------
 ; vbe_set_mode - Switch to a graphics mode
 ; EAX = width, EBX = height, ECX = bpp
+; Returns: caller's EAX/EBX/ECX preserved via popad; on invalid mode
+; the function returns without changing any state.
 ;---------------------------------------
 vbe_set_mode:
         pushad
+        ; --- Validate mode parameters (whitelist) ---
+        ; Width: 320..VBE_MAX_WIDTH; Height: 200..VBE_MAX_HEIGHT;
+        ; Bpp: 16, 24, or 32. Reject anything else to bound the FB mapping
+        ; and prevent y*pitch overflow in pixel writers.
+        cmp eax, 320
+        jl .vsm_bad
+        cmp eax, VBE_MAX_WIDTH
+        jg .vsm_bad
+        cmp ebx, 200
+        jl .vsm_bad
+        cmp ebx, VBE_MAX_HEIGHT
+        jg .vsm_bad
+        cmp ecx, 16
+        je .vsm_ok
+        cmp ecx, 24
+        je .vsm_ok
+        cmp ecx, 32
+        je .vsm_ok
+.vsm_bad:
+        popad
+        ret
+.vsm_ok:
         mov [vbe_width], eax
         mov [vbe_height], ebx
         mov [vbe_bpp], ecx
@@ -175,11 +207,26 @@ vbe_set_mode:
         mov ax, VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED
         out dx, ax
 
-        ; Map 8 MB of framebuffer into virtual address space
-        ; Map LFB physical pages starting at vbe_lfb_addr
+        ; Map enough framebuffer pages to cover the validated mode.
+        ; pages = ceil(width * height * Bpp / 4096), capped at VBE_MAX_FB_PAGES.
+        ; Mode validation above already bounds width/height/bpp so the multiply
+        ; cannot overflow 32 bits.
         mov eax, [vbe_lfb_addr]         ; Start virtual = physical (identity map)
         mov ebx, eax                    ; Physical address
-        mov ecx, 2048                   ; 2048 pages = 8 MB
+        push eax
+        push ebx
+        mov eax, [vbe_width]
+        imul eax, [vbe_height]
+        imul eax, [vbe_Bpp]
+        add eax, 4095
+        shr eax, 12                     ; round up to page count
+        cmp eax, VBE_MAX_FB_PAGES
+        jbe .map_fb_pages_ok
+        mov eax, VBE_MAX_FB_PAGES
+.map_fb_pages_ok:
+        mov ecx, eax                    ; ECX = page count
+        pop ebx
+        pop eax
 .map_fb_loop:
         push ecx
         mov ecx, 0x07                   ; PG_PRESENT | PG_WRITABLE | PG_USER
@@ -210,11 +257,24 @@ vbe_set_mode:
         shr eax, 12             ; round up to page count
         cmp eax, [vbe_shadow_pages]
         jle .shadow_ready       ; existing allocation is large enough — reuse it
-        ; Need a larger buffer: allocate fresh (old pages remain allocated but unused)
+        ; Need a larger buffer: free the old one first to avoid leaking pages
+        ; on repeated mode growth, then allocate fresh.
+        push eax                ; save new page count
+        mov eax, [vbe_shadow_buf]
+        test eax, eax
+        jz .shadow_alloc_new
+        mov ecx, [vbe_shadow_pages]
+        test ecx, ecx
+        jz .shadow_alloc_new
+        call pmm_free_pages
+        mov dword [vbe_shadow_buf], 0
+        mov dword [vbe_shadow_pages], 0
+.shadow_alloc_new:
+        pop eax                 ; restore new page count
         mov ecx, eax
         call pmm_alloc_pages
         test eax, eax
-        jz .shadow_ready        ; alloc failed — keep old buffer (or none)
+        jz .shadow_ready        ; alloc failed — leave shadow_buf=0
         mov [vbe_shadow_buf], eax
         mov [vbe_shadow_pages], ecx
 .shadow_ready:
@@ -575,9 +635,19 @@ vbe_ac_mode3:
 ;---------------------------------------
 ; vbe_putpixel - Draw a pixel
 ; EAX = x, EBX = y, ECX = colour (32-bit ARGB)
+; Silently clipped to current framebuffer bounds.
 ;---------------------------------------
 vbe_putpixel:
         pushad
+        ; Reject negative coords (signed compare) and coords >= dim
+        cmp eax, 0
+        jl .pp_clip
+        cmp eax, [vbe_width]
+        jge .pp_clip
+        cmp ebx, 0
+        jl .pp_clip
+        cmp ebx, [vbe_height]
+        jge .pp_clip
         ; offset = y * pitch + x * Bpp
         imul ebx, [vbe_pitch]
         imul eax, [vbe_Bpp]
@@ -586,16 +656,85 @@ vbe_putpixel:
         mov [ebx], ecx
         popad
         ret
+.pp_clip:
+        popad
+        ret
 
 ;---------------------------------------
 ; vbe_fill_rect - Fill a rectangle with colour
 ; EAX = x, EBX = y, ECX = width, EDX = height, ESI = colour
+; Rect is clipped to framebuffer bounds; out-of-bounds rects become no-ops.
+; Prevents y*pitch overflow that previously caused page faults.
 ;---------------------------------------
 vbe_fill_rect:
         pushad
+        ; --- Clip to framebuffer bounds ---
+        ; Reject if rect entirely outside (x>=w or y>=h or x+w<=0 or y+h<=0)
+        cmp byte [vbe_active], 0
+        je .fr_skip
+        cmp dword [vbe_width], 0
+        je .fr_skip
+        cmp dword [vbe_height], 0
+        je .fr_skip
+        ; If width/height <= 0 nothing to do (treat as unsigned)
+        cmp ecx, 0
+        jle .fr_skip
+        cmp edx, 0
+        jle .fr_skip
+        ; Clip left: if eax<0, shift width and set eax=0
+        cmp eax, 0
+        jge .fr_no_clip_left
+        add ecx, eax            ; width += x (x is negative)
+        jle .fr_skip
+        xor eax, eax
+.fr_no_clip_left:
+        ; Clip top: if ebx<0, shift height and set ebx=0
+        cmp ebx, 0
+        jge .fr_no_clip_top
+        add edx, ebx            ; height += y (y is negative)
+        jle .fr_skip
+        xor ebx, ebx
+.fr_no_clip_top:
+        ; Clip right: if x+w > width, w = width - x
+        push eax
+        add eax, ecx            ; eax = x + w
+        cmp eax, [vbe_width]
+        jle .fr_no_clip_right
+        mov ecx, [vbe_width]
+        sub ecx, [esp]          ; ecx = width - x
+        jle .fr_skip_pop
+.fr_no_clip_right:
+        pop eax
+        ; Clip bottom: if y+h > height, h = height - y
+        push ebx
+        add ebx, edx
+        cmp ebx, [vbe_height]
+        jle .fr_no_clip_bottom
+        mov edx, [vbe_height]
+        sub edx, [esp]
+        jle .fr_skip_pop2
+.fr_no_clip_bottom:
+        pop ebx
+        ; Final sanity: x in [0,width), y in [0,height), w>0, h>0
+        cmp eax, [vbe_width]
+        jge .fr_skip
+        cmp ebx, [vbe_height]
+        jge .fr_skip
+        cmp ecx, 0
+        jle .fr_skip
+        cmp edx, 0
+        jle .fr_skip
         mov [.fr_x], eax
         mov [.fr_w], ecx
         mov [.fr_color], esi
+        jmp .fr_row
+.fr_skip_pop2:
+        add esp, 4              ; drop saved ebx
+.fr_skip_pop:
+        add esp, 4              ; drop saved eax
+.fr_skip:
+        popad
+        ret
 .fr_row:
         cmp edx, 0
         je .fr_done
@@ -742,8 +881,12 @@ sys_framebuf:
         mov [.fdt_y],   edx
         mov [.fdt_col], edi
         mov ebp, esi                    ; EBP = string pointer
+        mov dword [.fdt_remaining], VBE_MAX_DRAW_STRING
 
 .fdt_char:
+        cmp dword [.fdt_remaining], 0
+        jle .fdt_done
+        dec dword [.fdt_remaining]
         movzx eax, byte [ebp]
         test al, al
         jz .fdt_done
@@ -817,6 +960,7 @@ sys_framebuf:
 .fdt_y:         dd 0
 .fdt_col:       dd 0
 .fdt_saved_lfb: dd 0
+.fdt_remaining: dd 0
 
 ;---------------------------------------
 ; cmd_gui_demo - Shell command `gui`:
@@ -907,7 +1051,7 @@ cmd_gui_demo:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_vbe_no
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 

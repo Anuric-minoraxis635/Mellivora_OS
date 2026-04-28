@@ -187,6 +187,10 @@ pmm_alloc_pages:
 .ap_contig_check:
         cmp ecx, 0
         je .ap_found
+        ; Phase 1.3: bound the contiguity scan to the bitmap size (0x100000
+        ; pages = 4 GB) so a pathological request can't overrun PMM_BITMAP.
+        cmp esi, 0x100000
+        jae .ap_contig_fail
         ; Check if page ESI is free
         mov eax, esi
         shr eax, 3              ; Byte index

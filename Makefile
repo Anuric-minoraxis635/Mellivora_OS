@@ -17,7 +17,9 @@ NASM = nasm
 QEMU = qemu-system-i386
 DD = dd
 UNAME_S := $(shell uname -s)
-NPROC ?= $(shell nproc 2>/dev/null || echo 4)
+# Phase 3.1: portable parallelism detection — try Linux nproc, then BSD/macOS
+# sysctl, then POSIX getconf, then a safe default of 4 cores.
+NPROC ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 
 # Output
 IMAGE = mellivora.img
@@ -63,13 +65,9 @@ QEMU_DEBUG_FLAGS = $(QEMU_FLAGS) \
 # Programs
 PROG_DIR = programs
 PROG_SRCS = $(wildcard $(PROG_DIR)/*.asm)
-PROG_BINS = $(patsubst %.asm,%.bin,$(PROG_SRCS) $(TEST_PROGS)) programs/timewarp.bin
+PROG_BINS = $(patsubst %.asm,%.bin,$(PROG_SRCS) $(TEST_PROGS))
 
 TEST_PROGS = programs/sbrk_test.asm programs/hello_test.asm
-
-# TimeWarp lives in its own subdirectory
-programs/timewarp.bin: programs/timewarp/timewarp.asm programs/syscalls.inc $(wildcard programs/lib/*.inc)
-	$(NASM) -f bin -Iprograms/ -o $@ -l programs/timewarp.lst programs/timewarp/timewarp.asm
 
 
 # ISO packaging
@@ -84,7 +82,7 @@ ISO_DOCS = docs/INSTALL.md docs/USER_GUIDE.md docs/PROGRAMMING_GUIDE.md \
 # Populate script
 POPULATE = python3 populate.py
 
-.PHONY: all clean run run-iso run-serial debug programs populate full check iso iso-lite iso-verify sizes help dev count
+.PHONY: all clean run run-iso run-serial debug programs populate full check sanitize iso iso-lite iso-verify sizes help dev count
 
 all: $(IMAGE)
 
@@ -103,7 +101,12 @@ $(KERNEL_BIN): $(KERNEL_SRC) $(KERNEL_INCS)
 # This computes ceil(size / 512) so stage2 loads exactly the right amount.
 kernel_sectors.inc: $(KERNEL_BIN)
 	@KSECTORS=$$(( ($$(wc -c < $(KERNEL_BIN)) + 511) / 512 )); \
-	echo "KERNEL_SECTORS  equ $$KSECTORS" > $@
+		if [ $$KSECTORS -gt 2048 ]; then \
+			echo "  ERROR: kernel is $$KSECTORS sectors (> 2048 = 1 MB) \
+			and will overflow the stage-2 load buffer at 0x20000."; \
+			exit 1; \
+		fi; \
+		echo "KERNEL_SECTORS  equ $$KSECTORS" > $@
 	@echo "  Kernel sectors: $$(cat $@)"
 
 # Assemble stage 2 loader (depends on kernel_sectors.inc)
@@ -236,6 +239,19 @@ iso-verify: $(ISO_FILE)
 check: full
 	@bash tests/test_build.sh
 	@python3 tests/test_hbfs.py
+
+# Phase 4: nightly-style sanitize build. Defines KERNEL_DEBUG_BOUNDS so any
+# compile-time bounds-check macros are enabled, then runs the regression
+# suite. NASM treats unknown -D flags harmlessly so this is a no-op until
+# kernel sources start guarding code with %ifdef KERNEL_DEBUG_BOUNDS.
+sanitize:
+	@echo "=== Sanitize build (KERNEL_DEBUG_BOUNDS=1) ==="
+	$(MAKE) clean
+	$(NASM) -f bin -O0 -DKERNEL_DEBUG_BOUNDS=1 \
+		-o $(KERNEL_BIN) -l $(KERNEL_BIN:.bin=.lst) $(KERNEL_SRC)
+	$(MAKE) full
+	$(MAKE) check
+	@echo "=== Sanitize run complete ==="
 
 # Show component sizes
 sizes: $(BOOT_BIN) $(STAGE2_BIN) $(KERNEL_BIN)

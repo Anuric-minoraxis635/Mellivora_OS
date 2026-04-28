@@ -34,7 +34,7 @@ isr_exception_noerr:
         call vga_putchar
         ; Print register dump from pushad frame
         call exc_dump_regs
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ; Recover to shell
         mov esp, KERNEL_STACK
@@ -75,7 +75,7 @@ isr_exception_err:
         call vga_putchar
         ; Print register dump from pushad frame
         call exc_dump_regs
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ; Recover to shell
         mov esp, KERNEL_STACK
@@ -407,7 +407,7 @@ irq_keyboard:
         ; Hard-abort to shell — clean up redirection state
         mov esp, KERNEL_STACK
         call shell_redir_reset
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         sti
         jmp shell_main
 .no_ctrl:

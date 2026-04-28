@@ -550,6 +550,18 @@ sys_proclist:
         pushad
         cmp ebx, MAX_TASKS
         jge .spl_fail
+        ; Phase 1.2: validate user-supplied output buffer pointer (ECX).
+        ; Must lie in identity-mapped user range; otherwise we'd write the
+        ; process list to arbitrary kernel memory.
+        push eax
+        mov eax, ecx
+        call validate_user_ptr
+        jc .spl_fail_pop
+        ; Also check the last byte of the 48-byte output buffer.
+        add eax, 47
+        call validate_user_ptr
+        jc .spl_fail_pop
+        pop eax
         ; Calculate TCB address
         mov edi, ebx
         imul edi, TCB_SIZE
@@ -589,6 +601,11 @@ sys_proclist:
         popad
         iretd
 .spl_fail:
+        mov dword [esp + 28], -1
+        popad
+        iretd
+.spl_fail_pop:
+        pop eax
         mov dword [esp + 28], -1
         popad
         iretd
@@ -1034,6 +1051,10 @@ sys_sigmask:
         inc edx
         jmp .smk_find
 .smk_found:
+        ; Phase 1.4: serialize signal-mask read-modify-write. A timer IRQ
+        ; landing between the load of EAX (old mask) and the store could
+        ; deliver a signal under the wrong mask.
+        cli
         mov eax, [edi + TCB_SIG_MASK]  ; Old mask
         cmp ebx, 0
         je .smk_ret              ; Just get
@@ -1043,6 +1064,7 @@ sys_sigmask:
         je .smk_block
         cmp ebx, 3
         je .smk_unblock
+        sti
         jmp .smk_fail
 .smk_set:
         mov [edi + TCB_SIG_MASK], ecx
@@ -1054,6 +1076,7 @@ sys_sigmask:
         not ecx
         and [edi + TCB_SIG_MASK], ecx
 .smk_ret:
+        sti
         mov [esp + 28], eax
         popad
         iretd

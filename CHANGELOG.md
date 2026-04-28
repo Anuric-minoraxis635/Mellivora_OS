@@ -1,5 +1,168 @@
 # Mellivora OS - Changelog
 
+## v8.4.2 - `del` is now persistent across `make full`
+
+### Fix
+
+- `populate.py` previously re-added every program binary on every `make full`,
+  silently undoing any `del` the user had run inside the OS.
+- Cache schema bumped to **v2** with a new `tombstones` set. Workflow:
+  1. On the first `make full` after a `del`, populate notices the cached
+     binary is no longer present in the image, records a tombstone, and
+     skips re-adding it.
+  2. On subsequent `make full` runs, tombstoned binaries stay gone as long
+     as the source `.asm` (and therefore the rebuilt `.bin`) hasn't been
+     touched.
+  3. Touching/modifying the source clears the tombstone — the binary is
+     "revived" automatically. This preserves the developer ergonomics of
+     "edit `programs/foo.asm`, run `make full`, see new foo".
+- Cache also self-prunes tombstones whose `.bin` has been removed from
+  `programs/`.
+- v1 (flat dict) caches are still loaded for backward compat.
+
+## v8.4.1 - Theme actually themes now
+
+### Fixes
+
+- **`theme`** previously called `SYS_SETCOLOR` once and exited, but every kernel
+  print path immediately restored the hard-coded `COLOR_DEFAULT` (0x07), so the
+  selected theme survived only until the next character was printed.
+- Added a runtime `default_color` byte and `vga_reset_color` helper.
+  `SYS_SETCOLOR` now updates *both* the live `vga_color` and the persistent
+  `default_color`, and all ~22 `mov byte [vga_color], COLOR_DEFAULT` sites in
+  `kernel/` were converted to `call vga_reset_color`. `vga_clear` now uses the
+  live default color too, so the screen background recolors immediately.
+- Net effect: `theme amber` (or any of the 8 themes) now actually changes the
+  shell, prompt, and subsequent output for the rest of the session.
+
+## v8.4.0 - Daily Driver Pass IV
+
+### Six more userspace programs
+
+- **`roll [N | A B]`**  generic random integer (default 1..100, one-arg = 1..N, two-arg = A..B inclusive).
+- **`pick item1 item2 ...`**  picks one of the supplied tokens uniformly at random.
+- **`reverse <text>`**  reverses the argument string.
+- **`upper <text>`** / **`lower <text>`**  case conversion.
+- **`countc <text>`**  prints `chars / words / lines` counts for the argument string.
+
+### Tests
+
+- Regression suite grows from 1534 to **1576/1576 passing**.
+
+## v8.3.0 - Daily Driver Pass III
+
+### Six more userspace programs
+
+- **`stopwatch`**  lap stopwatch (Enter = lap, q = quit); HH:MM:SS.cc precision via `SYS_GETTIME`.
+- **`countdown <secs|Nm|MM:SS>`**  countdown timer with end-of-time beeps and Burrows notification.
+- **`passgen [len] [-a]`**  random password generator (xorshift32 seeded from time XOR PID); `-a` restricts to alphanumerics.
+- **`dice [NdM]`**  roll N dice with M sides; prints individual rolls and sum.
+- **`coin [N]`**  flip one or more coins; summary heads count when N>1.
+- **`tip <bill> [pct] [people]`**  bill / tip / split-by-people calculator with cents-precise math.
+
+### Tests
+
+- Regression suite grows from 1492 to **1534/1534 passing**.
+
+## v8.2.0 - Daily Driver Pass II
+
+### Six more userspace programs
+
+- **`tldr <cmd>`**  one-line summary lookup; `tldr` with no args lists every entry.
+- **`todo`**  persistent todo list at `/home/.todo` with `add` and `done <N>`.
+- **`pomodoro [min]`**  focus timer with countdown, three completion beeps, and a desktop notification.
+- **`morse [-p] <text>`**  ASCII -> Morse (`.-`/`-...`); beeps each symbol on the PC speaker unless `-p` (print only).
+- **`wiki list|show|add <topic> ...`**  personal knowledge base under `/home/wiki/<topic>.txt`.
+- **`color`**  full 16x16 VGA attribute palette rendered straight to the framebuffer; press any key to exit.
+
+### Tests
+
+- Regression suite grows from 1450 to **1492/1492 passing**.
+
+## v8.1.0 - Daily Driver Pass
+
+### New userspace programs (14, one per roadmap section)
+
+- **Kernel & runtime**: `meminfo` — free/total memory, uptime, PID.
+- **Filesystem**: `tag` — file tagging via `/home/.tags.db`; `add`/`list`/`find`.
+- **Shell UX**: `histgrep` — case-insensitive search of shell history.
+- **Burrows GUI**: `bnotify` — desktop notification with optional `-c <attr>`.
+- **Burrows app**: `bcal` — today + scheduled events from `/home/.events`.
+- **Demo**: `plasma` — animated text-mode plasma at 0xB8000.
+- **Game**: `nim` — single-pile misère Nim with optimal AI.
+- **Dev tooling**: `mkprog` — generates a runnable `<name>.asm` skeleton.
+- **Networking**: `dnslook` — `SYS_DNS` wrapper printing dotted-quad IPs.
+- **Sound**: `play` — token-driven note sequencer for the PC speaker.
+- **Productivity**: `journal` — appends `YYYY-MM-DD HH:MM` entries to `/home/journal.txt`.
+- **Polish**: `theme` — 8 named color themes, persisted to `/home/.theme`.
+- **Documentation**: `tutorial` — 8-page interactive welcome tour.
+- **Distribution**: `pkginfo` — OS / version / arch / RAM / uptime banner.
+
+### Manual pages
+
+- **`man` rewrite**: 49 baked-in topics with case-insensitive lookup,
+  `man -l` listing and `man -k <kw>` keyword search; falls back to
+  `/docs/man/<topic>.txt` if a topic is not baked in.
+- New man pages added for every program above plus `intro`, `shell`,
+  `files`, `burrows`, `syscalls`, `hbfs`, `keys`, `credits`.
+
+### Tests
+
+- Regression suite grows from 1352 to **1450/1450 passing**.
+
+## v8.0.0 - Hardening Pass
+
+### Kernel safety
+
+- **VBE / framebuffer**: bounds-checked `vbe_putpixel` and full rect
+  clipping in `vbe_fill_rect`; mode validation in `vbe_set_mode`
+  (320..1920 × 200..1200, bpp ∈ {16,24,32}); LFB mapping page count
+  derived from the validated mode and capped; shadow buffer pages now
+  freed before reallocation; `.fb_drawtext` capped at 4 KB to prevent
+  runaway loops.
+- **Syscall pointer validation**: new `validate_user_ptr` helper guards
+  user-supplied pointers in `sys_print`, `sys_exec_call`, and
+  `sys_proclist`. Range checked against `[PROGRAM_BASE, USER_PTR_MAX)`.
+- **Paging / PMM**: `paging_map_page` now drops its prologue pushes on
+  the alloc-failure path (was popad'ing with 16 stale bytes on the
+  stack); `pmm_alloc_pages` contiguity scan bounded against the bitmap
+  size.
+- **IPC / scheduler**: pipe `PIPE_COUNT` check + cursor update made
+  atomic so concurrent readers/writers can't underflow or over-fill the
+  ring; `sys_sigmask` read-modify-write wrapped in CLI/STI.
+- **Drivers**: ATA read/write reject LBA outside `[0, ata_total_sectors)`;
+  RTL8139 driver refuses BAR0 == 0; HBFS filename compare capped at 252
+  to handle non-NUL-terminated entries; shell `Ctrl+W` keeps `line_len`
+  in sync with the cursor.
+
+### User-program safety
+
+- `wget` hostname / path / outfile copy loops capped at the buffer size
+  (256 / 512 / 128 bytes).
+- `programs/lib/vbe.inc` `vbe_fill_rect` now clips against `fb_width` /
+  `fb_height`, mirroring the kernel-side fix.
+
+### Build, populate, tooling
+
+- Portable `NPROC` detection (`nproc` → `sysctl` → `getconf` → 4).
+- `kernel_sectors.inc` generation hard-fails if the kernel exceeds
+  2048 sectors (1 MB), preventing silent overflow of the stage-2 load
+  buffer.
+- `populate.py` now prints a warning when a filename is truncated to 252
+  bytes instead of silently shortening.
+- New `make sanitize` target builds with `KERNEL_DEBUG_BOUNDS=1` for
+  CI-style hostile-bounds nightlies.
+- `Experimental/tools/packet_fuzz.py` — dependency-free fuzz frame
+  generator (Eth runts, ARP/IPv4/TCP/UDP malformations, random garbage)
+  for offline replay against `kernel/net.inc` parsers.
+
+### Documentation
+
+- `docs/TECHNICAL_REFERENCE.md` GDT table corrected: `0xCF` flags row
+  now reads "32-bit, 4K gran" (was mislabelled "64-bit").
+
+---
+
 ## v7.5.0 - BASIC Compiler & Interpreter Upgrade
 
 ### Added
@@ -432,19 +595,6 @@ previously-fixed `reversi.asm` was the source of the visible flip bug).
 - **`programs/doomfire.asm`, `programs/life.asm`, `programs/pong.asm`,
   `programs/snake.asm`, `programs/tetris.asm`**: Added `SYS_FRAMEBUF/4` present call at
   the end of each frame to make rendered output visible when double buffering is active.
-
-### Programs — Timewarp (TempleCode IDE) Fixes
-
-- **Startup blank screen**: The UI was not drawn when `timewarp` was launched without a
-  file argument. Fixed by always calling `draw_all` before entering the main event loop,
-  regardless of whether an argument was supplied.
-- **Stack corruption in bare `PRINT`**: `do_print`'s `.dp_blank` handler had a spurious
-  `pop esi` after `call output_add_line`. This consumed the `call try_basic_logo` return
-  address from the stack, causing `ret` to jump to a saved register value (EDI from
-  `exec_line`'s `pushad` frame, e.g. `0xe3`) instead of the correct return point.
-  Fixed by removing the erroneous `pop esi`.
-- Added `SYS_FRAMEBUF/4` present call inside `draw_all` so every full redraw is
-  committed to the screen.
 
 ### Build & Tests
 

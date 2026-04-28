@@ -112,10 +112,10 @@ The GDT is defined in Stage 2 and uses a flat 4 GB memory model with 6 entries:
 | Selector | Name | Base | Limit | Access | Flags | Ring | Description |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `0x00` | Null | — | — | — | — | — | Required null descriptor |
-| `0x08` | Kernel Code | 0 | 4 GB | `0x9A` | `0xCF` | 0 | Execute/Read, 64-bit, 4K gran |
-| `0x10` | Kernel Data | 0 | 4 GB | `0x92` | `0xCF` | 0 | Read/Write, 64-bit, 4K gran |
-| `0x18` | User Code | 0 | 4 GB | `0xFA` | `0xCF` | 3 | Execute/Read, 64-bit, 4K gran |
-| `0x20` | User Data | 0 | 4 GB | `0xF2` | `0xCF` | 3 | Read/Write, 64-bit, 4K gran |
+| `0x08` | Kernel Code | 0 | 4 GB | `0x9A` | `0xCF` | 0 | Execute/Read, 32-bit, 4K gran |
+| `0x10` | Kernel Data | 0 | 4 GB | `0x92` | `0xCF` | 0 | Read/Write, 32-bit, 4K gran |
+| `0x18` | User Code | 0 | 4 GB | `0xFA` | `0xCF` | 3 | Execute/Read, 32-bit, 4K gran |
+| `0x20` | User Data | 0 | 4 GB | `0xF2` | `0xCF` | 3 | Read/Write, 32-bit, 4K gran |
 | `0x28` | TSS | Runtime | 104 B | `0x89` | `0x00` | 0 | Task State Segment |
 
 User-mode selectors include RPL=3: `USER_CS = 0x1B`, `USER_DS = 0x23`, `TSS_SEL = 0x28`.

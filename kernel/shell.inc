@@ -14,7 +14,7 @@ shell_main:
         call vga_init
 .shell_console_ready:
 
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         mov eax, [program_exit_code]
         mov [shell_last_status], eax
 
@@ -81,17 +81,10 @@ shell_main:
         mov esi, msg_boot_suf
         call vga_print
 
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 .no_motd:
 
 .prompt:
-        ; If cursor is not at column 0, emit a newline so the prompt
-        ; always appears at the start of a fresh line.
-        cmp dword [vga_cursor_x], 0
-        je .prompt_col0
-        mov al, 0x0A
-        call vga_putchar
-.prompt_col0:
         ; Print prompt with full current directory path
         mov byte [vga_color], COLOR_PROMPT
         mov esi, shell_prompt_pre
@@ -103,7 +96,7 @@ shell_main:
         call vga_print
         mov esi, shell_prompt_post
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 
         ; Reset history browsing position
         mov eax, [hist_count]
@@ -152,10 +145,6 @@ shell_main:
         cmp al, CTRL_C_CODE     ; Ctrl+C - cancel
         je .ctrl_c
 
-        ; v5.0: Ctrl+Z - send SIGTSTP to last background task
-        cmp al, 0x1A            ; Ctrl+Z
-        je .ctrl_z
-
         ; v4.0: Enhanced line editing shortcuts
         cmp al, 0x01            ; Ctrl+A - move to beginning of line
         je .ctrl_a
@@ -169,8 +158,6 @@ shell_main:
         je .ctrl_w
         cmp al, 0x0C            ; Ctrl+L - clear screen, redraw prompt
         je .ctrl_l
-        cmp al, 0x12            ; Ctrl+R - reverse history search
-        je .ctrl_r
 
         ; Store character if buffer not full
         cmp ecx, LINE_BUFFER_SIZE - 1
@@ -275,7 +262,7 @@ shell_main:
         ; Skip trailing spaces
 .ctrl_w_spaces:
         cmp ecx, 0
-        je .read_loop
+        je .ctrl_w_done
         cmp byte [edi - 1], ' '
         jne .ctrl_w_word
         dec edi
@@ -288,9 +275,9 @@ shell_main:
 .ctrl_w_word:
         ; Delete non-space characters
         cmp ecx, 0
-        je .read_loop
+        je .ctrl_w_done
         cmp byte [edi - 1], ' '
-        je .read_loop
+        je .ctrl_w_done
         dec edi
         dec ecx
         push ecx
@@ -298,6 +285,11 @@ shell_main:
         call vga_putchar
         pop ecx
         jmp .ctrl_w_word
+.ctrl_w_done:
+        ; Phase 1.5: keep total-length tracker in sync with the cursor.
+        mov [line_len], ecx
+        mov byte [edi], 0
+        jmp .read_loop
 
 ; v4.0: Ctrl+L - clear screen and redraw prompt + current input
 .ctrl_l:
@@ -314,7 +306,7 @@ shell_main:
         call vga_print
         mov esi, shell_prompt_post
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         ; Redraw current input
         pop edi
         pop ecx
@@ -332,175 +324,6 @@ shell_main:
         jmp .ctrl_l_redraw
 .ctrl_l_done:
         pop ecx
-        jmp .read_loop
-
-; v5.0: Ctrl+R - Incremental reverse history search
-; Shows "(reverse-i-search)`<query>': <match>" as user types.
-; Enter: accept match into line_buffer and execute.
-; Escape or Ctrl+C: cancel, restore previous input.
-.ctrl_r:
-        ; Erase current line input first
-        call .erase_input
-
-        ; Clear search buffer
-        mov dword [ctrl_r_search_len], 0
-        mov byte [ctrl_r_search_buf], 0
-
-        ; Show initial prompt
-        push esi
-        mov esi, msg_ctrl_r_prompt
-        call vga_print
-        mov esi, msg_ctrl_r_sep
-        call vga_print
-        pop esi
-
-.ctrl_r_read:
-        call kb_getchar
-
-        cmp al, 0x0D            ; Enter — accept match
-        je .ctrl_r_accept
-        cmp al, 0x1B            ; Escape — cancel
-        je .ctrl_r_cancel
-        cmp al, 0x03            ; Ctrl+C — cancel
-        je .ctrl_r_cancel
-        cmp al, 0x08            ; Backspace — delete last search char
-        je .ctrl_r_bs
-        cmp al, 0x7F
-        je .ctrl_r_bs
-
-        ; Printable char: append to search string
-        mov ebx, [ctrl_r_search_len]
-        cmp ebx, 255
-        jge .ctrl_r_read
-        mov [ctrl_r_search_buf + ebx], al
-        inc ebx
-        mov [ctrl_r_search_len], ebx
-        mov byte [ctrl_r_search_buf + ebx], 0
-        jmp .ctrl_r_do_search
-
-.ctrl_r_bs:
-        ; Remove last char from search string
-        mov ebx, [ctrl_r_search_len]
-        cmp ebx, 0
-        je .ctrl_r_read
-        dec ebx
-        mov [ctrl_r_search_len], ebx
-        mov byte [ctrl_r_search_buf + ebx], 0
-
-.ctrl_r_do_search:
-        ; Scan history backwards for a match
-        mov eax, [hist_count]
-        test eax, eax
-        jz .ctrl_r_no_match
-
-        ; Start from most recent (hist_count - 1) going backwards
-        mov ebp, [hist_count]   ; EBP = current search index (1-based, starts at hist_count)
-
-.ctrl_r_scan_loop:
-        cmp ebp, 0
-        je .ctrl_r_no_match
-        dec ebp
-
-        ; Check if hist_buf[ebp] contains ctrl_r_search_buf
-        push esi
-        mov eax, ebp
-        imul eax, HIST_ENTRY_SIZE
-        lea esi, [hist_buf + eax]   ; candidate history entry
-        mov edi, ctrl_r_search_buf  ; search string
-        call str_find_substr
-        pop esi
-        jc .ctrl_r_scan_loop        ; CF=1 = not found, try previous
-
-        ; Found a match — display it
-        push esi
-        ; Redraw search prompt (CR to start of line)
-        mov esi, msg_ctrl_r_prompt
-        call vga_print
-        mov esi, ctrl_r_search_buf
-        call vga_print
-        mov esi, msg_ctrl_r_sep
-        call vga_print
-
-        ; Show the matched history entry
-        mov eax, ebp
-        imul eax, HIST_ENTRY_SIZE
-        lea esi, [hist_buf + eax]
-.ctrl_r_show:
-        lodsb
-        cmp al, 0
-        je .ctrl_r_show_done
-        call vga_putchar
-        jmp .ctrl_r_show
-.ctrl_r_show_done:
-        ; Erase to end of line with spaces (clear leftover from longer previous match)
-        mov al, ' '
-        push ecx
-        mov ecx, 20             ; Pad with spaces to clear old text
-.ctrl_r_pad:
-        call vga_putchar
-        dec ecx
-        jnz .ctrl_r_pad
-        ; Back up over the spaces
-        mov ecx, 20
-.ctrl_r_unpad:
-        mov al, 0x08
-        call vga_putchar
-        dec ecx
-        jnz .ctrl_r_unpad
-        pop ecx
-        pop esi
-
-        ; Store current match index for accept
-        mov [ctrl_r_match_idx], ebp
-        mov byte [ctrl_r_have_match], 1
-        jmp .ctrl_r_read
-
-.ctrl_r_no_match:
-        ; No match found — show fail prompt
-        push esi
-        mov esi, msg_ctrl_r_fail
-        call vga_print
-        mov esi, ctrl_r_search_buf
-        call vga_print
-        mov esi, msg_ctrl_r_sep
-        call vga_print
-        pop esi
-        mov byte [ctrl_r_have_match], 0
-        jmp .ctrl_r_read
-
-.ctrl_r_accept:
-        ; Accept: copy matched entry to line_buffer
-        cmp byte [ctrl_r_have_match], 0
-        je .ctrl_r_cancel
-
-        mov al, 0x0A
-        call vga_putchar
-
-        ; Copy matched entry to line_buffer
-        mov eax, [ctrl_r_match_idx]
-        imul eax, HIST_ENTRY_SIZE
-        lea esi, [hist_buf + eax]
-        mov edi, line_buffer
-        xor ecx, ecx
-.ctrl_r_copy:
-        lodsb
-        stosb
-        cmp al, 0
-        je .ctrl_r_copied
-        inc ecx
-        jmp .ctrl_r_copy
-.ctrl_r_copied:
-        mov [line_len], ecx
-        lea edi, [line_buffer + ecx]
-        jmp .execute
-
-.ctrl_r_cancel:
-        ; Cancel — clear line, return to normal read_loop
-        mov al, 0x0A
-        call vga_putchar
-        mov edi, line_buffer
-        xor ecx, ecx
-        mov dword [line_len], 0
         jmp .read_loop
 
 .backspace:
@@ -534,6 +357,7 @@ shell_main:
         call shell_tab_complete
         mov [line_len], ecx     ; cursor at end after tab-complete
         lea edi, [line_buffer + ecx]
+        mov [line_len], ecx     ; cursor at end after tab-complete
         jmp .read_loop
 
 .ctrl_c:
@@ -546,35 +370,6 @@ shell_main:
         xor ecx, ecx
         mov dword [line_len], 0
         jmp .prompt
-
-; v5.0: Ctrl+Z - send SIGTSTP to most recently launched background task
-.ctrl_z:
-        mov ebx, [last_bg_pid]
-        test ebx, ebx
-        jz .ctrl_z_none
-        mov ecx, SIGTSTP
-        mov eax, SYS_SIGNAL
-        int 0x80
-        cmp eax, 0
-        jne .ctrl_z_none
-        ; Print "[bg] Stopped PID <pid>"
-        push esi
-        mov esi, msg_bg_stopped
-        call vga_print
-        mov eax, [last_bg_pid]
-        call vga_print_dec
-        mov al, 0x0A
-        call vga_putchar
-        pop esi
-        ; Clear last_bg_pid so a second Ctrl+Z doesn't re-stop
-        mov dword [last_bg_pid], 0
-        jmp .read_loop
-.ctrl_z_none:
-        push esi
-        mov esi, msg_bg_noproc
-        call vga_print
-        pop esi
-        jmp .read_loop
 
 .hist_clear_line:
         ; Erase current input on screen
@@ -1965,7 +1760,7 @@ shell_dispatch_core:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_unknown_cmd
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         ret
 
 ;---- Command implementations ----
@@ -2165,7 +1960,7 @@ shell_dispatch_core:
         mov byte [vga_color], COLOR_INFO
         mov esi, version_text
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 
         ; Print memory info
         mov esi, msg_mem_total
@@ -2492,11 +2287,18 @@ shell_dispatch_core:
         ret
 
 .cmd_whoami:
+        cmp byte [login_authenticated], 1
+        je .whoami_show
+        mov esi, .whoami_none
+        call vga_print
+        ret
+.whoami_show:
         mov esi, login_current_user
         call vga_print
         mov al, 0x0A
         call vga_putchar
         ret
+.whoami_none: db "Not logged in", 0x0A, 0
 
 .cmd_stat:
         call cmd_stat
@@ -2674,7 +2476,7 @@ shell_dispatch_core:
         mov byte [vga_color], COLOR_ERROR
         mov esi, .source_usage_str
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         ret
 .source_usage_str: db "Usage: source <script>", 0x0A, 0
 
@@ -2801,7 +2603,7 @@ cmd_diff_files:
         mov esi, filename_buf2
         call vga_print
         call vga_newline
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 
         ; Compare line by line
         mov esi, PROGRAM_BASE
@@ -2878,7 +2680,7 @@ cmd_diff_files:
         jmp .diff_p2
 .diff_p2e:
         call vga_newline
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 
 .diff_lines_same:
         pop edi
@@ -2930,7 +2732,7 @@ cmd_diff_files:
         jmp .diff_f2e_loop
 
 .diff_done:
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         cmp dword [.diff_diffs], 0
         jne .diff_ret
         mov esi, msg_diff_same
@@ -2948,7 +2750,7 @@ cmd_diff_files:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_need_2files
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .diff_not_found1:
@@ -2958,7 +2760,7 @@ cmd_diff_files:
         call vga_print
         mov esi, msg_not_found_w
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .diff_not_found2:
@@ -2968,7 +2770,7 @@ cmd_diff_files:
         call vga_print
         mov esi, msg_not_found_w
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -3111,7 +2913,7 @@ cmd_uniq_file:
         call vga_print_dec
         mov al, ' '
         call vga_putchar
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 .uniq_no_c:
         mov esi, [.uniq_prev]
 .uniq_pl:
@@ -3133,14 +2935,14 @@ cmd_uniq_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_need_filename
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .uniq_nf:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_file_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -3211,14 +3013,14 @@ cmd_rev_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_need_filename
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .rev_nf:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_file_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -3297,14 +3099,14 @@ cmd_tac_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_need_filename
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .tac_nf:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_file_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .tac_lines: dd 0
@@ -3394,7 +3196,7 @@ cmd_alias:
         mov byte [vga_color], COLOR_INFO
         mov esi, edx
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         mov al, '='
         call vga_putchar
         lea esi, [edx + ALIAS_NAME_LEN]
@@ -3447,7 +3249,7 @@ cmd_alias:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_table_full
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -3467,7 +3269,7 @@ cmd_history:
         mov eax, ebx
         inc eax
         call vga_print_dec
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         mov al, ' '
         call vga_putchar
         mov eax, ebx
@@ -3617,7 +3419,7 @@ cmd_which:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_need_filename
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -3700,7 +3502,7 @@ cmd_sleep:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_sleep_usage
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -3782,7 +3584,7 @@ cmd_size_file:
         call vga_print
         mov esi, msg_file_colon
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 
         mov eax, [edi + DIRENT_SIZE]
         call vga_print_dec
@@ -3830,14 +3632,14 @@ cmd_size_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_need_filename
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .size_nf:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_file_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -3934,14 +3736,14 @@ cmd_strings_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_need_filename
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .strings_nf:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_file_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -3998,7 +3800,7 @@ cmd_mouse_status:
         call vga_print
 .btn_done:
         call vga_newline
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -4006,7 +3808,7 @@ cmd_mouse_status:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_mouse_absent
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -4046,7 +3848,7 @@ cmd_list_dir:
         je .sc_batch
         cmp byte [edi + DIRENT_TYPE], FTYPE_LINK
         je .sc_link
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         jmp .sc_print
 .sc_dir:
         mov byte [vga_color], COLOR_INFO
@@ -4082,7 +3884,7 @@ cmd_list_dir:
 .sc_col:
         pop ecx
         pop esi
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         inc edx
         cmp edx, 4             ; 4 columns
         jl .short_next
@@ -4114,7 +3916,7 @@ cmd_list_dir:
         mov byte [vga_color], COLOR_HEADER
         mov esi, dir_header
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         mov esi, dir_separator
         call vga_print
 
@@ -4139,7 +3941,7 @@ cmd_list_dir:
         cmp byte [edi + 253], FTYPE_LINK
         je .type_link
         ; Default: text file
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         mov esi, type_text
         call vga_print
         jmp .print_size
@@ -4164,7 +3966,7 @@ cmd_list_dir:
         call vga_print
 
 .print_size:
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         mov al, ' '
         call vga_putchar
 
@@ -4252,7 +4054,7 @@ cmd_list_dir:
         call vga_print
         pop esi
 
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         mov al, 0x0A
         call vga_putchar
 
@@ -4371,7 +4173,7 @@ cmd_delete_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -4388,7 +4190,7 @@ cmd_shutdown:
         mov byte [vga_color], COLOR_INFO
         mov esi, msg_shutdown
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 
         ; Flush filesystem (write bitmap back to disk)
         mov esi, msg_shutdown_sync
@@ -4455,7 +4257,7 @@ cmd_reboot:
         mov byte [vga_color], COLOR_INFO
         mov esi, msg_reboot
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 
         ; Small delay so user can see the message without feeling stalled
         mov ecx, 0x0800000
@@ -4589,7 +4391,7 @@ cmd_head_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .head_usage:
@@ -4701,7 +4503,7 @@ cmd_tail_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .tail_usage:
@@ -4764,7 +4566,7 @@ cmd_cat_file:
         call vga_print_dec_width
         mov al, ' '
         call vga_putchar
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         pop esi
         ; Print chars until newline or end
 .cat_n_char:
@@ -4785,7 +4587,7 @@ cmd_cat_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_need_filename
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -4793,7 +4595,7 @@ cmd_cat_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -4812,22 +4614,6 @@ cmd_more_file:
         mov eax, [cmd_flag_num]
         mov [.more_page], eax
 .more_default_page:
-        ; If no filename argument, try stdin (pipe input)
-        push esi
-        call skip_spaces
-        cmp byte [esi], 0
-        pop esi
-        jne .more_from_file
-        call shell_use_stdin_as_input
-        jc .more_usage
-        ; ECX = byte count returned by shell_use_stdin_as_input
-        jmp .more_size_ok
-.more_usage:
-        mov esi, msg_more_usage
-        call vga_print
-        popad
-        ret
-.more_from_file:
         mov edi, PROGRAM_BASE   ; Use program area as temp buffer
         call hbfs_read_file
         jc .more_not_found
@@ -4860,7 +4646,7 @@ cmd_more_file:
         mov byte [vga_color], COLOR_INFO
         mov esi, msg_more_prompt
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         pop esi
 
         ; Wait for keypress
@@ -4893,7 +4679,7 @@ cmd_more_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .more_page: dd PAGER_LINES
@@ -4995,7 +4781,7 @@ cmd_write_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_write_err
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -5153,7 +4939,7 @@ cmd_hexdump_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -5165,7 +4951,7 @@ cmd_show_memory:
         mov byte [vga_color], COLOR_INFO
         mov esi, msg_mem_header
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 
         call pmm_count_free
         mov [total_free_pages], eax
@@ -5207,7 +4993,7 @@ cmd_show_disk:
         mov byte [vga_color], COLOR_INFO
         mov esi, msg_disk_header
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 
         mov esi, msg_disk_sectors
         call vga_print
@@ -5244,7 +5030,7 @@ cmd_df_info:
         mov byte [vga_color], COLOR_INFO
         mov esi, msg_df_header
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 
         ; Count total data blocks available on disk
         ; Total data sectors = ata_total_sectors - HBFS_DATA_START
@@ -5648,27 +5434,14 @@ cmd_exec_program:
         mov byte  [edi + 5], 0xCD       ; int 0x80
         mov byte  [edi + 6], 0x80
 
-        ; 5. Allocate user stack for bg task: BG_STACK_PAGES usable + 1 guard page
-        ;    The first page of the allocation is marked non-present (guard page).
-        ;    Any stack overflow past the usable region causes a clean page fault.
+        ; 5. Allocate user stack for bg task (64KB = 16 pages)
         push ebx
-        mov ecx, BG_STACK_PAGES + 1    ; +1 for guard page at base
+        mov ecx, BG_STACK_PAGES
         call pmm_alloc_pages
         test eax, eax
         jz .bg_nomem_pop
-        mov [.bg_stack_addr], eax       ; [.bg_stack_addr] = guard page base
-        ; Mark guard page as not-present (PG_PRESENT=0) to catch stack overflow
-        push ebx
-        push ecx
-        ; EAX = guard page virtual addr (identity-mapped: virt == phys)
-        mov ebx, 0                      ; phys = 0 (entry has no present bit)
-        xor ecx, ecx                    ; flags = 0  → not-present
-        call paging_map_page
-        pop ecx
-        pop ebx
-        ; Actual stack occupies pages 1..BG_STACK_PAGES of the allocation
-        mov eax, [.bg_stack_addr]
-        add eax, (BG_STACK_PAGES + 1) * 4096 - 4  ; Stack top - 4 for trampoline
+        mov [.bg_stack_addr], eax
+        add eax, (BG_STACK_PAGES * 4096) - 4   ; Stack top - 4 for trampoline
         ; Push trampoline address as "return address" on ring-3 stack
         mov edx, [.bg_tramp_addr]
         mov [eax], edx
@@ -5699,8 +5472,7 @@ cmd_exec_program:
         mov dword [edi + TCB_PRIORITY], PRIO_LOW  ; Run at low priority
         pop eax                         ; EAX = PID
 
-        ; 8. Save PID for Ctrl+Z and print "[bg] PID <pid>"
-        mov [last_bg_pid], eax
+        ; 8. Print "[1] <pid>" to confirm bg launch
         mov byte [bg_launch_flag], 0
         mov byte [vga_color], COLOR_INFO
         mov esi, msg_bg_launched
@@ -5710,7 +5482,7 @@ cmd_exec_program:
         mov al, 10
         call vga_putchar
         pop eax
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 
         popad
         clc
@@ -5729,14 +5501,8 @@ cmd_exec_program:
         mov eax, [.bg_prog_addr]
         mov ecx, BG_PROG_PAGES
         call pmm_free_pages
-        ; Restore guard page PTE (identity-map it back) before freeing physical pages
         mov eax, [.bg_stack_addr]
-        push eax
-        mov ebx, eax
-        mov ecx, PG_PRESENT | PG_WRITABLE | PG_USER
-        call paging_map_page
-        pop eax
-        mov ecx, BG_STACK_PAGES + 1    ; Guard page + usable stack pages
+        mov ecx, BG_STACK_PAGES
         call pmm_free_pages
         mov byte [bg_launch_flag], 0
         jmp .not_found
@@ -6066,7 +5832,7 @@ shell_execute_pipeline:
 .pipe_len_ok:
         mov [pipe_input_len], eax
         mov byte [redir_out_buf + eax], 0
-        mov esi, redir_out_buf
+        mov esi, redir_out_name
         mov edi, redir_in_buf
         mov ecx, eax
         rep movsb
@@ -6140,7 +5906,7 @@ cmd_enter_hex:
         mov byte [vga_color], COLOR_PROMPT
         mov al, 'h'
         call vga_putchar
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 
         ; Read a line
         mov esi, temp_line_buf
@@ -6187,7 +5953,7 @@ cmd_enter_hex:
         mov byte [vga_color], COLOR_PROMPT
         mov al, '*'
         call vga_putchar
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 
         push ecx
         mov edi, filename_buf
@@ -6226,7 +5992,7 @@ cmd_enter_hex:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_write_err
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -6300,7 +6066,7 @@ cmd_copy_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_copy_usage
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -6347,7 +6113,7 @@ cmd_copy_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_wild_needs_star
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -6438,7 +6204,7 @@ cmd_copy_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -6447,7 +6213,7 @@ cmd_copy_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -6456,7 +6222,7 @@ cmd_copy_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_write_err
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -6530,7 +6296,7 @@ cmd_rename_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_ren_usage
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -6577,7 +6343,7 @@ cmd_rename_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_wild_needs_star
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -6666,7 +6432,7 @@ cmd_rename_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -6904,7 +6670,7 @@ cmd_stat:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -7127,7 +6893,7 @@ cmd_fsck:
         call vga_print         ; filename
         mov al, 0x0A
         call vga_putchar
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         pop ebx
         pop esi
         inc dword [.fsck_errors]
@@ -7192,7 +6958,7 @@ cmd_fsck:
         mov byte [vga_color], COLOR_SUCCESS
         mov esi, .fsck_sum_clean
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 .fsck_end:
         popad
         ret
@@ -7300,7 +7066,7 @@ cmd_ln:
         mov byte [vga_color], COLOR_ERROR
         mov esi, .ln_err
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -7357,14 +7123,14 @@ cmd_chmod:
         mov byte [vga_color], COLOR_SUCCESS
         mov esi, .chmod_done
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .chmod_fail:
         mov byte [vga_color], COLOR_ERROR
         mov esi, .chmod_err
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .chmod_usage:
@@ -7415,14 +7181,14 @@ cmd_chown:
         mov byte [vga_color], COLOR_SUCCESS
         mov esi, .chown_done
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .chown_fail:
         mov byte [vga_color], COLOR_ERROR
         mov esi, .chown_err
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .chown_usage:

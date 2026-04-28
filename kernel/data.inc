@@ -645,6 +645,7 @@ bss_start:
 vga_cursor_x:   resd 1
 vga_cursor_y:   resd 1
 vga_color:      resb 1
+default_color:  resb 1
 
 tick_count:     resd 1
 total_free_pages: resd 1

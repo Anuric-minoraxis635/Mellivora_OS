@@ -82,6 +82,38 @@ vbe_clear_screen:
 ;-----------------------------------------------------------------------
 vbe_fill_rect:
         pushad
+        ; Phase 2.3: clip rect to framebuffer (mirrors kernel-side clamp).
+        ; If origin is past the right/bottom edge or dimensions are zero/negative,
+        ; just bail. Otherwise clamp width/height so we never write past the LFB.
+        mov eax, [fb_width]
+        cmp ebx, eax
+        jge .vfr_done           ; x >= width -> nothing visible
+        mov eax, [fb_height]
+        cmp ecx, eax
+        jge .vfr_done           ; y >= height
+        test edx, edx
+        jle .vfr_done           ; w <= 0
+        test esi, esi
+        jle .vfr_done           ; h <= 0
+        ; Clamp width: if x + w > fb_width, w = fb_width - x
+        mov eax, [fb_width]
+        sub eax, ebx
+        cmp edx, eax
+        jle .vfr_w_ok
+        mov edx, eax
+.vfr_w_ok:
+        ; Clamp height: if y + h > fb_height, h = fb_height - y
+        mov eax, [fb_height]
+        sub eax, ecx
+        cmp esi, eax
+        jle .vfr_h_ok
+        mov esi, eax
+.vfr_h_ok:
+        ; Persist clamped width/height back into the pushad slots that the
+        ; original code reads from below.
+        mov [esp+20], edx
+        mov [esp+ 4], esi
+
         mov eax, ecx
         imul eax, [fb_pitch]    ; y * pitch
         mov esi, [fb_addr]

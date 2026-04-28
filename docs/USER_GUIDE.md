@@ -72,7 +72,7 @@ Mellivora organizes files into subdirectories:
 ```text
 /
 ├── bin/          126 utility programs (edit, grep, sort, tcc, wget, nc, ...)
-├── games/         42 games (snake, tetris, 2048, galaga, chess, wordle, ...)
+├── games/         27 games (snake, tetris, galaga, pacman, rogue, robotown, ...)
 ├── samples/       19 source files (hello.c, fib.c, hello.pl, fizzbuzz.pl, hello.bas, ...)
 ├── docs/           text files (readme.txt, license.txt, notes.txt, ...)
 └── script.bat      Example batch script
@@ -458,55 +458,38 @@ Mellivora ships with a broad set of user-space programs organized in `/bin` and 
 | `snake` | Arrow keys, ESC | Classic snake — eat food, grow, don't crash (VBE) |
 | `tetris` | ←→ move, ↑ rotate, ↓ soft drop, Space hard drop, ESC quit | Tetris with 7 pieces, scoring, and levels (VBE) |
 | `mine` | Arrow keys, Space reveal, F flag, ESC quit | Minesweeper |
-| `sokoban` | Arrow keys, R restart, ESC quit | Box-pushing puzzle |
-| `2048` | Arrow keys / WASD, ESC quit | Sliding number tiles |
 | `galaga` | ←→ move, Space shoot, ESC quit | Space shooter with pixel-art sprites and enemy waves (VBE) |
-| `chess` | Type moves (e.g. e2e4), ESC quit | Full chess with legal move validation |
-| `checkers` | Arrow keys, Space select/move, ESC quit | Checkers with forced-capture rules |
 | `blackjack` | Number keys for menu choices | Blackjack (21) card game |
-| `pong` | W/S keys (left), ↑↓ keys (right) | Two-paddle Pong (VBE) |
-| `wordle` | Type 5-letter words, Enter | Six-guess word puzzle |
 | `rogue` | hjkl / arrow keys, ESC quit | ASCII dungeon crawler |
 | `freecell` | Arrow keys + Enter, ESC quit | FreeCell solitaire |
 | `adventure` | Text commands (GO, LOOK, TAKE, ...) | Interactive fiction text adventure |
-| `battleship` | Arrow keys, Space/Enter, ESC | Battleship fleet warfare |
 | `connect4` | Number keys 1–7 for column, ESC | Connect Four |
 | `mastermind` | Type color codes, Enter | Code-breaking game |
 | `hangman` | Type letters, Enter | Hangman word game |
 | `tictactoe` | Number keys 1–9 for position | Tic-tac-toe |
-| `nim` | Type number, Enter | Nim strategy game |
 | `simon` | Number keys 1–4 | Simon says memory game |
-| `puzzle15` | Arrow keys | Sliding 15-puzzle |
 | `pacman` | Arrows, R restart, ESC quit | Pac-Man-style maze chase — eat dots/pellets, hunt or flee 4 ghosts |
-| `sudoku` | Arrows + 1-9, 0/Space=clear, H=hint, R=new, ESC=quit | Classic 9x9 Sudoku with conflict highlighting and persistent solve count |
 | `guess` | Type numbers, Enter | Number guessing with hints |
 | `kingdom` | Number keys for menus | Medieval kingdom management simulation |
 | `life` | ESC quit | Conway's Game of Life — auto-running simulation (VBE) |
 | `maze` | ESC quit | Random maze generation + BFS solve |
 | `neurovault` | Text commands (LOOK, GO, TAKE, etc.) | Sci-fi interactive fiction adventure |
 | `outbreak` | Number keys for menus | Zombie survival strategy game |
-| `piano` | Number keys 1–9, 0, -, =, etc. | PC speaker piano (15 notes) |
 | `doomfire` | ESC quit | Animated Doom fire effect (VBE) |
 | `matrix` | ESC quit | Matrix rain animation |
 | `rain` | ESC quit | Rainfall animation |
 | `starfield` | ESC quit | Starfield fly-through |
-| `pipes` | Arrows + Enter, Space=start flow, R=restart, ESC quit | Pipe Dream puzzle: route flow from source to drain |
 | `lunar` | Thrust/rotate keys, ESC quit | Lunar lander game |
-| `lights` | Arrow keys, Space toggle | Lights-out puzzle |
-| `timewarp` | ESC quit, F-keys toolbar | TempleCode IDE — BASIC/PILOT/Logo interpreter with turtle graphics canvas |
-| `lolcat` | (pipe input) | Rainbow-colorize text output |
 | `solitaire` | Arrow keys + Enter, ESC quit | Klondike solitaire card game |
 | `worm` | Arrow keys | Multi-worm arena game |
-| `breakout` | ←→ move, ESC quit | Breakout / Arkanoid |
 
 **Persistent high scores (v6.5+)** — most games now save your best
 score (or total wins) to `/scores/<game>` and play short win/lose audio
-cues at the end of each round. Wired games include: `tetris`, `2048`,
-`snake`, `breakout`, `simon`, `galaga`, `mastermind`, `hangman`,
-`tictactoe`, `connect4`, `wordle`, `mine`, `puzzle15`,
-`lights`, `sokoban`, `guess`, `battleship`, `blackjack`, `nim`,
-`checkers`, `iago`, `solitaire`, `pipes`, `lunar`, `kingdom`,
-`rogue`, `outbreak`, `pacman`, `frogger`, and `sudoku`.
+cues at the end of each round. Wired games include: `tetris`,
+`snake`, `simon`, `galaga`, `mastermind`, `hangman`,
+`tictactoe`, `connect4`, `mine`, `guess`, `blackjack`,
+`iago`, `solitaire`, `lunar`, `kingdom`, `rogue`,
+`outbreak`, and `pacman`.
 
 ### Utilities (in /bin)
 

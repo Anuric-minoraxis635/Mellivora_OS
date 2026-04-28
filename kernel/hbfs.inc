@@ -244,6 +244,9 @@ hbfs_find_file:
         push esi
         push edi
         push ecx
+        ; Phase 1.5: cap filename comparison to HBFS max (252) so a missing
+        ; null terminator in the search key can't walk past the dir entry.
+        mov ecx, 252
 .cmp_loop:
         mov al, [esi]
         mov ah, [edi]
@@ -253,7 +256,10 @@ hbfs_find_file:
         jz .match
         inc esi
         inc edi
-        jmp .cmp_loop
+        dec ecx
+        jnz .cmp_loop
+        ; Ran past the cap without seeing a terminator — treat as no-match
+        jmp .no_match
 
 .no_match:
         pop ecx

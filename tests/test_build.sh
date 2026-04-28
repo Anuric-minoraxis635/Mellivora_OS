@@ -189,7 +189,7 @@ echo ""
 
 # ---------- Program binaries ----------
 echo "[Program binaries]"
-for prog in hello fibonacci primes snake tetris sokoban guess mine colors banner sysinfo edit; do
+for prog in hello fibonacci primes snake tetris galaga guess mine colors banner sysinfo edit; do
     BIN="programs/${prog}.bin"
     if [[ -f "$BIN" ]]; then
         SZ=$(file_sz "$BIN")
@@ -299,7 +299,7 @@ SYSCALL_MISMATCH=0
 for SYS in SYS_EXIT SYS_PUTCHAR SYS_GETCHAR SYS_PRINT SYS_READ_KEY SYS_OPEN SYS_READ \
            SYS_WRITE SYS_CLOSE SYS_DELETE SYS_SEEK SYS_STAT SYS_MKDIR SYS_READDIR \
            SYS_SETCURSOR SYS_GETTIME SYS_SLEEP SYS_CLEAR SYS_SETCOLOR SYS_MALLOC \
-           SYS_FREE SYS_EXEC SYS_DISK_READ SYS_DISK_WRITE SYS_BEEP SYS_DATE \
+           SYS_FREE SYS_EXEC SYS_DISK_READ SYS_SBRK SYS_BEEP SYS_DATE \
            SYS_CHDIR SYS_GETCWD SYS_SERIAL SYS_GETENV SYS_FREAD SYS_FWRITE \
            SYS_GETARGS SYS_SERIAL_IN SYS_STDIN_READ SYS_YIELD; do
     K_VAL=$(grep -E -o "${SYS}[[:space:]]+equ[[:space:]]+[0-9]+" kernel.asm 2>/dev/null | grep -E -o '[0-9]+$' || echo "")

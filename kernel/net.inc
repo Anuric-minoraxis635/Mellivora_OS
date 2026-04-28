@@ -234,6 +234,10 @@ net_init:
         pop edx
         pop edx
         and eax, 0xFFFFFFFC
+        ; Phase 1.5: refuse a zero / unconfigured BAR0 — issuing PIO to port 0
+        ; would corrupt the legacy I/O space. Treat as "no NIC".
+        test eax, eax
+        jz .next_func
         mov [net_io_base], eax
 
         ; Read PCI interrupt line (register 0x3C, byte 0)
@@ -3847,7 +3851,7 @@ cmd_net_status:
         mov byte [vga_color], COLOR_HEADER
         mov esi, msg_net_header
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 
         ; State
         mov esi, msg_net_state
@@ -3934,7 +3938,7 @@ cmd_net_status:
         call vga_putchar
 
 .ns_end:
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -4142,7 +4146,7 @@ cmd_arp_show:
         mov byte [vga_color], COLOR_HEADER
         mov esi, msg_arp_header
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 
         mov edi, net_arp_cache
         mov ecx, ARP_CACHE_SIZE

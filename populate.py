@@ -60,22 +60,35 @@ _CACHE_FILE = ".populate_cache"
 
 
 def _load_cache():
-    """Load mtime cache from disk.  Returns {} if missing or corrupt."""
+    """Load mtime cache from disk.  Returns (files_dict, tombstones_set)."""
     try:
         with open(_CACHE_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if isinstance(data, dict):
-            return data
     except (OSError, json.JSONDecodeError):
-        pass
-    return {}
+        return {}, set()
+    if isinstance(data, dict):
+        # v2 schema: {"_v": 2, "files": {...}, "tombstones": [...]}
+        if data.get("_v") == 2:
+            files = data.get("files", {}) or {}
+            tombs = set(data.get("tombstones", []) or [])
+            if isinstance(files, dict):
+                return files, tombs
+        # v1 schema: flat {fname: mtime}
+        else:
+            return data, set()
+    return {}, set()
 
 
-def _save_cache(cache):
-    """Persist mtime cache to disk."""
+def _save_cache(files, tombstones):
+    """Persist mtime cache and tombstones to disk."""
+    payload = {
+        "_v": 2,
+        "files": files,
+        "tombstones": sorted(tombstones),
+    }
     try:
         with open(_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(cache, f, indent=2)
+            json.dump(payload, f, indent=2)
     except OSError as exc:
         print(f"  WARNING: could not write cache file: {exc}")
 
@@ -118,7 +131,12 @@ def create_dir_entry(filename, ftype, size, start_block,
     entry = bytearray(HBFS_DIR_ENTRY_SIZE)
 
     # Filename: bytes 0-252 (null-terminated, max 252 chars)
-    name_bytes = filename.encode('ascii')[:HBFS_MAX_FILENAME]
+    raw = filename.encode('ascii')
+    if len(raw) > HBFS_MAX_FILENAME:
+        # Phase 3.2: surface the truncation instead of silently shortening.
+        print(f"  WARNING: filename '{filename}' is {len(raw)} bytes, "
+              f"truncating to {HBFS_MAX_FILENAME}")
+    name_bytes = raw[:HBFS_MAX_FILENAME]
     entry[0:len(name_bytes)] = name_bytes
     entry[len(name_bytes)] = 0  # Null terminator
 
@@ -450,6 +468,35 @@ class FSImage:
                     break
         return removed
 
+    def cleanup_stale_subdir_entries(self, dirname, managed_names,
+                                     expected_names):
+        """Remove stale managed file entries from a preserved subdirectory.
+
+        This prunes files previously installed by populate.py when they are
+        no longer present in the source tree or no longer belong in this
+        directory. Guest-created files are preserved because only names from
+        the managed cache are eligible for removal.
+        """
+        sd = self.subdirs.get(dirname)
+        if sd is None:
+            return 0
+
+        removed = 0
+        for i in range(HBFS_SUBDIR_MAX_FILES):
+            off = i * HBFS_DIR_ENTRY_SIZE
+            if not self._entry_used(sd['data'], off):
+                continue
+            name = self._entry_name(sd['data'], off)
+            if name in managed_names and name not in expected_names:
+                sd['data'][off:off + HBFS_DIR_ENTRY_SIZE] = \
+                    b'\x00' * HBFS_DIR_ENTRY_SIZE
+                print(f"  [CLEAN] removed stale /{dirname} entry: {name}")
+                removed += 1
+
+        sd['entry_count'] = self._count_entries(sd['data'],
+                                                HBFS_SUBDIR_MAX_FILES)
+        return removed
+
     def finalize(self):
         """Write all directory structures and bitmap to disk."""
         for _dirname, sd in self.subdirs.items():
@@ -744,14 +791,12 @@ BURROWS_PROGRAMS = {
 
 # Classify programs into categories for subdirectories
 GAME_PROGRAMS = {
-    '2048', 'adventure', 'battleship', 'blackjack', 'breakout',
-    'checkers', 'chess', 'connect4', 'doomfire', 'frogger',
-    'galaga', 'guess', 'hangman', 'kingdom', 'life', 'lights',
-    'lolcat', 'lunar', 'mastermind', 'matrix', 'maze', 'mine',
-    'neurovault', 'nim', 'outbreak', 'pacman', 'piano', 'pipes', 'pong',
-    'iago', 'puzzle15', 'rain', 'rogue', 'simon', 'snake',
-    'sokoban', 'solitaire', 'starfield', 'sudoku', 'tetris', 'tictactoe',
-    'wordle', 'peggame',
+    'adventure', 'blackjack', 'connect4', 'doomfire',
+    'galaga', 'guess', 'hangman', 'kingdom', 'life',
+    'lunar', 'mastermind', 'matrix', 'maze', 'mine',
+    'neurovault', 'outbreak', 'pacman', 'iago', 'rain', 'rogue',
+    'simon', 'snake', 'solitaire', 'starfield', 'tetris', 'tictactoe',
+    'robotown',
 }
 
 # Everything else in programs/ goes to /bin
@@ -774,11 +819,15 @@ def main():
 
     fs = FSImage(image_path)
 
-    # Load mtime cache — used to skip unchanged binaries when the filesystem
-    # is being preserved (incremental mode).
-    cache = _load_cache()
+    # Load mtime cache + tombstone set. Tombstones are program names the user
+    # `del`'d inside the OS; we must NOT re-add them on `make full` unless the
+    # host source file's mtime changes (which is treated as an explicit
+    # "please re-add this" signal from the developer).
+    cache, tombstones = _load_cache()
     new_cache = {}
     skipped = 0
+    tombstoned_now = 0
+    revived = 0
 
     # Create subdirectories
     fs.create_subdir("bin")
@@ -786,7 +835,16 @@ def main():
     fs.create_subdir("Burrows")
     fs.create_subdir("samples")
     fs.create_subdir("docs")
-    fs.create_subdir("timewarp")
+
+    managed_names = {
+        fname[:-4] for fname in cache
+        if fname.endswith('.bin')
+    }
+    expected_programs = {
+        'bin': set(),
+        'games': set(),
+        'Burrows': set(),
+    }
 
     # Add text files to appropriate directories
     doc_files = {'readme.txt', 'license.txt', 'notes.txt', 'todo.txt'}
@@ -807,6 +865,10 @@ def main():
             if fname.endswith('.bin'):
                 fpath = os.path.join(programs_dir, fname)
                 mtime = os.path.getmtime(fpath)
+                src_path = os.path.join(programs_dir, fname[:-4] + '.asm')
+                if not os.path.exists(src_path):
+                    print(f"  [SKIP] orphaned binary without source: {fname}")
+                    continue
                 new_cache[fname] = mtime
 
                 prog_name = fname[:-4]
@@ -817,6 +879,22 @@ def main():
                     target_dir = "games"
                 else:
                     target_dir = "bin"
+
+                expected_programs[target_dir].add(prog_name)
+
+                # Tombstone handling: if the user `del`'d this program inside
+                # the OS, honor that across `make full` runs UNLESS the host
+                # source has been touched since we recorded it (mtime change
+                # = explicit "re-add" signal from the developer).
+                if fname in tombstones:
+                    if fs.preserve_mode and cache.get(fname) == mtime:
+                        # User deleted, source unchanged → keep deleted.
+                        del new_cache[fname]
+                        skipped += 1
+                        continue
+                    # Source changed → revive it.
+                    tombstones.discard(fname)
+                    revived += 1
 
                 # Incremental skip: if the image already has a valid HBFS,
                 # the file hasn't changed since the last populate, and the
@@ -831,6 +909,14 @@ def main():
                         if slot is not None:
                             skipped += 1
                             continue
+                    # Image lost the entry (user `del`'d it). If we still hold
+                    # a cache hit, that means this is the FIRST `make full`
+                    # since the deletion — record a tombstone and skip.
+                    if fs.preserve_mode:
+                        tombstones.add(fname)
+                        del new_cache[fname]
+                        tombstoned_now += 1
+                        continue
 
                 with open(fpath, 'rb') as f:
                     data = f.read()
@@ -840,6 +926,14 @@ def main():
                     fs.add_file(prog_name, data, directory="games")
                 else:
                     fs.add_file(prog_name, data, directory="bin")
+
+    if fs.preserve_mode:
+        fs.cleanup_stale_subdir_entries(
+            "bin", managed_names, expected_programs["bin"])
+        fs.cleanup_stale_subdir_entries(
+            "games", managed_names, expected_programs["games"])
+        fs.cleanup_stale_subdir_entries(
+            "Burrows", managed_names, expected_programs["Burrows"])
 
     # Add C sample source files
     samples_dir = "samples"
@@ -859,26 +953,28 @@ def main():
                 fs.add_file(fname, data.encode('ascii'),
                             directory="samples")
 
-    # Add TempleCode sample programs
-    timewarp_src = os.path.join(programs_dir, "timewarp")
-    if os.path.isdir(timewarp_src):
-        for fname in sorted(os.listdir(timewarp_src)):
-            if fname.endswith('.tc'):
-                fpath = os.path.join(timewarp_src, fname)
-                with open(fpath, 'r', encoding='ascii') as f:
-                    data = f.read()
-                fs.add_file(fname, data.encode('ascii'),
-                            directory="timewarp")
-
     # Remove any root-level entries that have since moved to subdirectories.
     fs.cleanup_stale_root_entries()
 
     fs.finalize()
 
+    # Drop tombstones whose source binary no longer exists on the host so the
+    # cache doesn't grow unboundedly.
+    if os.path.isdir(programs_dir):
+        existing_bins = {
+            n for n in os.listdir(programs_dir) if n.endswith('.bin')
+        }
+        tombstones = {t for t in tombstones if t in existing_bins}
+
     # Persist mtime cache for next run
-    _save_cache(new_cache)
+    _save_cache(new_cache, tombstones)
     if skipped:
         print(f"  ({skipped} unchanged binaries skipped — incremental mode)")
+    if tombstoned_now:
+        print(f"  ({tombstoned_now} user-deleted binaries tombstoned — "
+              f"will not be re-added; rebuild the .asm to revive)")
+    if revived:
+        print(f"  ({revived} tombstoned binaries revived from source change)")
 
 
 if __name__ == '__main__':

@@ -555,7 +555,7 @@ print_sysinfo:
         mov esi, msg_serial_info
         call vga_print
 
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -1616,7 +1616,7 @@ cmd_cd_internal:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_no_prev_dir
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         mov dword [esp + 28], 0  ; Not a failure — just informational
         popad
         ret
@@ -2560,14 +2560,14 @@ cmd_wc_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_need_filename
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .wc_nf:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .wc_bytes: dd 0
@@ -2630,7 +2630,7 @@ cmd_find_file:
         call vga_print_dec
         mov al, ':'
         call vga_putchar
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         mov esi, edi
         call vga_print
         mov al, 0x0A
@@ -2666,7 +2666,7 @@ cmd_find_file:
         call vga_print_dec
         mov al, ':'
         call vga_putchar
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         mov esi, edi
         call vga_print
         mov al, 0x0A
@@ -2687,7 +2687,7 @@ cmd_find_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -2862,7 +2862,7 @@ cmd_append_file:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_write_err
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .app_sz: dd 0
@@ -3031,7 +3031,7 @@ cmd_date_set:
         mov byte [vga_color], COLOR_SUCCESS
         mov esi, msg_date_set
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         call cmd_date_show
         popad
         ret
@@ -3040,7 +3040,7 @@ cmd_date_set:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_date_usage
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -3078,7 +3078,7 @@ cmd_exec_batch:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_batch_nested
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .bat_not_nested:
@@ -3102,7 +3102,7 @@ cmd_exec_batch:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -3199,7 +3199,7 @@ batch_run_loop:
         call vga_print
         mov al, 0x0A
         call vga_putchar
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
 .brl_skip_echo:
         ; Copy batch_line_buf into line_buffer (skip @ prefix if present)
         mov esi, batch_line_buf
@@ -3675,7 +3675,7 @@ batch_check_goto:
         mov al, 0x0A
         call vga_putchar
         pop esi
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         ; Advance ESI to end of script to abort
         mov esi, batch_script_buf
 .bcg_abort_scan:
@@ -4166,7 +4166,7 @@ batch_check_if:
         call vga_print
         mov al, 0x0A
         call vga_putchar
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         pop esi                 ; restore batch loop ESI (PUSH#1)
         ; Abort: advance to end of script
         mov esi, batch_script_buf
@@ -4248,14 +4248,14 @@ cmd_mkdir:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_already_exists
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 .mk_nospace:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_write_err
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
         ret
 
@@ -4284,7 +4284,7 @@ cmd_cd:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_not_found
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         jmp .cd_ret
 
 .cd_ok:
@@ -4898,7 +4898,7 @@ shell_tab_complete:
         call vga_print
         mov esi, shell_prompt_post
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         mov esi, line_buffer
         call vga_print
         pop esi

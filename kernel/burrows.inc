@@ -149,7 +149,7 @@ gui_desktop_main:
         mov byte [vga_color], COLOR_ERROR
         mov esi, .no_vbe_msg
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         ret
 .no_vbe_msg: db "Error: VBE not available", 0x0A, 0
 .notify_welcome: db "Welcome to Mellivora OS!", 0
@@ -226,7 +226,7 @@ gui_desktop_resume:
         mov byte [vga_color], COLOR_ERROR
         mov esi, msg_vbe_no
         call vga_print
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         ret
 
 gui_exit_desktop:

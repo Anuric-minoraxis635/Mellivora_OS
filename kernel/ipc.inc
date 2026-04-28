@@ -102,13 +102,13 @@ sys_pipe_write:
 .spw_loop:
         cmp edi, edx
         jge .spw_done
-        cmp dword [ebp + PIPE_COUNT], IPC_PIPE_SIZE
-        jge .spw_done           ; buffer full
 
-        ; Write one byte — disable interrupts around the cursor update
-        ; to prevent a context switch leaving PIPE_WRITE_POS and PIPE_COUNT
-        ; inconsistent if another task reads mid-update.
+        ; Phase 1.4: keep PIPE_COUNT check + update atomic. Previously the
+        ; check was outside the cli/sti window, allowing two concurrent
+        ; writers (or a writer racing a reader) to over-fill the buffer.
         cli
+        cmp dword [ebp + PIPE_COUNT], IPC_PIPE_SIZE
+        jge .spw_full_unlock
         mov eax, [ebp + PIPE_WRITE_POS]
         movzx ecx, byte [esi + edi]
         mov [ebp + PIPE_BUF + eax], cl
@@ -124,6 +124,9 @@ sys_pipe_write:
         sti
         inc edi
         jmp .spw_loop
+.spw_full_unlock:
+        sti
+        jmp .spw_done
 
 .spw_done:
         ; Wake any task waiting on this pipe (v3.0)
@@ -201,12 +204,13 @@ sys_pipe_read:
 .spr_loop:
         cmp esi, edx
         jge .spr_done
-        cmp dword [ebp + PIPE_COUNT], 0
-        je .spr_done            ; buffer empty
 
-        ; Read one byte — disable interrupts around the cursor update
-        ; to prevent a context switch mid-update.
+        ; Phase 1.4: keep PIPE_COUNT check + update atomic. Previously the
+        ; empty check was outside the cli/sti window, allowing two concurrent
+        ; readers to both decrement past zero.
         cli
+        cmp dword [ebp + PIPE_COUNT], 0
+        je .spr_empty_unlock
         mov eax, [ebp + PIPE_READ_POS]
         movzx ecx, byte [ebp + PIPE_BUF + eax]
         mov [edi + esi], cl
@@ -222,6 +226,9 @@ sys_pipe_read:
         sti
         inc esi
         jmp .spr_loop
+.spr_empty_unlock:
+        sti
+        jmp .spr_done
 
 .spr_done:
         mov [esp + 28], esi     ; return bytes read in EAX

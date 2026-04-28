@@ -4,14 +4,14 @@
 
 **A bare-metal 32-bit x86 operating system written in NASM assembly.**
 
-Mellivora OS is a from-scratch hobby OS that boots on real x86 hardware or in QEMU. It includes a custom HBFS filesystem, ring 3 user-mode execution, a DOS-inspired interactive shell with POSIX features, 95 syscalls, priority-based preemptive scheduling, signal support, an in-OS Tiny C Compiler, 178 assembly programs, and 19 bundled samples (C, Perl, and BASIC).
+Mellivora OS is a from-scratch hobby OS that boots on real x86 hardware or in QEMU. It includes a custom HBFS filesystem, ring 3 user-mode execution, a DOS-inspired interactive shell with POSIX features, 95 syscalls, priority-based preemptive scheduling, signal support, an in-OS Tiny C Compiler, 199 assembly programs, and 19 bundled samples (C, Perl, and BASIC).
 
 > New to the project? Start with the [Installation Guide](docs/INSTALL.md), then try the [Tutorial](docs/TUTORIAL.md) or browse the [Technical Reference](docs/TECHNICAL_REFERENCE.md).
 
 ## 🦡 At a Glance
 
 - **Boot path:** 3-stage BIOS boot flow into 32-bit protected mode
-- **Userland:** 90+ shell commands, 178 assembly programs, and 19 bundled samples (C, Perl, and BASIC)
+- **Userland:** 90+ shell commands, 199 assembly programs, and 19 bundled samples (C, Perl, and BASIC)
 - **Core pieces:** HBFS filesystem, ELF32 loader, PMM allocator, serial/VGA/ATA drivers
 - **Developer-ready:** API docs, programming guide, regression tests, and release packaging
 
@@ -71,14 +71,15 @@ Mellivora OS is a from-scratch hobby OS that boots on real x86 hardware or in QE
 - **Serial port** (COM1 at 115200 baud) for debug output
 - **RTC** real-time clock for date/time
 
-### Programs (178 assembly + 19 bundled samples)
+### Programs (199 assembly + 19 bundled samples)
 
-- **Games (42)**: Snake, Tetris, Minesweeper, Sokoban, 2048, Galaga, Pac-Man, Frogger, Game of Life, Maze, Kingdom, Outbreak, Neurovault, Chess, Checkers, Blackjack, Pong, Wordle, Rogue, and more
+- **Games (27)**: Snake, Tetris, Minesweeper, Galaga, Pac-Man, Game of Life, Maze, Kingdom, Outbreak, Neurovault, Blackjack, Rogue, Solitaire, and more
 - **HBU (Honey Badger Utilities)**: grep, sort, sed, tr, wc, cut, head, tail, diff, find, uniq, rev, paste, xargs, and more
 - **Tools**: Text editor, hex viewer, file pager, CSV viewer, dual-pane file manager (burrow)
-- **Demos**: Mandelbrot renderer, piano, banner, colors, calendar, calculator, Doom fire effect
+- **Demos**: Mandelbrot renderer, banner, colors, calendar, calculator, Doom fire effect
 - **Languages**: TCC (Tiny C Compiler), BASIC interpreter (`basic` + `basicc` compiler), Brainfuck interpreter, Perl interpreter, Forth interpreter
 - **Network tools**: ping, wget, nc, ftp, telnet, irc, gopher, dig, traceroute, whois, daytime
+- **Daily-driver suite (new)**: `tutorial`, `pkginfo`, `meminfo`, `journal`, `bcal`, `theme`, `tag`, `histgrep`, `bnotify`, `mkprog`, `dnslook`, `play`, `nim`, `plasma`, `tldr`, `todo`, `pomodoro`, `morse`, `wiki`, `color`, `stopwatch`, `countdown`, `passgen`, `dice`, `coin`, `tip`, `roll`, `pick`, `reverse`, `upper`, `lower`, `countc`
 - **API Libraries**: 17 reusable `.inc` libraries in `programs/lib/` (string, I/O, math, VGA, memory, data, net, GUI, VBE, font, audio, highscore, and more)
 - **Samples**: 11 C programs + 6 Perl scripts + 2 BASIC scripts in `/samples`
 
@@ -139,7 +140,7 @@ Lair:/> perl /samples/hello.pl # Run a Perl script
 ```text
 /
 ├── bin/          126 utility programs (edit, grep, sort, tcc, wget, nc, ...)
-├── games/         42 games (snake, tetris, 2048, galaga, chess, wordle, ...)
+├── games/         27 games (snake, tetris, galaga, pacman, rogue, robotown, ...)
 ├── samples/       19 source files (hello.c, fib.c, hello.pl, fizzbuzz.pl, hello.bas, ...)
 ├── docs/           text files (readme.txt, license.txt, notes.txt, ...)
 └── script.bat      Example batch script
@@ -169,7 +170,7 @@ Mellivora_OS/
 │   ├── tcc.asm             Tiny C Compiler (subset)
 │   ├── grep.asm            Pattern search
 │   ├── sort.asm            Line sorting
-│   └── ...                 (178 programs total)
+│   └── ...                 (199 programs total)
 ├── samples/                C, Perl, and BASIC source files
 │   ├── hello.c, fib.c, primes.c, calc.c, matrix.c, hanoi.c
 │   ├── bf.c, wumpus.c, boxes.c, stars.c, echo.c
@@ -213,50 +214,33 @@ Mellivora_OS/
 | `snake` | Classic snake — eat food, grow, avoid walls and tail |
 | `tetris` | Tetris with 7 tetrominoes, rotation, scoring, levels |
 | `mine` | Minesweeper with flag and reveal mechanics |
-| `sokoban` | Box-pushing puzzle game with multiple levels |
-| `2048` | Sliding tile number game |
 | `galaga` | Space shooter with enemy waves |
-| `chess` | Full chess with legal move validation |
-| `checkers` | Checkers with forced-capture rules |
 | `blackjack` | Blackjack (21) card game |
-| `pong` | Two-paddle Pong |
-| `wordle` | Six-guess word puzzle |
 | `rogue` | ASCII dungeon crawler |
 | `freecell` | FreeCell solitaire card game |
 | `adventure` | Text adventure (interactive fiction) |
-| `battleship` | Battleship fleet warfare game |
 | `connect4` | Connect Four |
 | `mastermind` | Mastermind code-breaking game |
 | `hangman` | Hangman word game |
 | `tictactoe` | Tic-tac-toe |
-| `nim` | Nim strategy game |
 | `simon` | Simon says memory game |
-| `puzzle15` | Sliding 15-puzzle |
 | `guess` | Number guessing game with hints |
 | `kingdom` | Medieval kingdom management simulation |
 | `life` | Conway's Game of Life (78×23 grid) |
 | `maze` | Random maze generator with BFS solver |
 | `neurovault` | Sci-fi dungeon crawler RPG |
 | `outbreak` | Zombie survival strategy game |
-| `piano` | PC speaker piano with 15 notes |
 | `doomfire` | Doom fire effect demo |
 | `matrix` | Matrix rain effect |
 | `rain` | Rainfall animation |
 | `starfield` | Starfield fly-through |
-| `pipes` | Animated pipes screensaver |
 | `lunar` | Lunar lander game |
-| `lights` | Lights-out puzzle |
-| `timewarp` | TempleCode IDE — BASIC/PILOT/Logo interpreter with turtle graphics canvas |
-| `lolcat` | Rainbow-colorize text output |
 | `solitaire` | Klondike solitaire card game |
 | `worm` | Multi-worm arena game |
-| `breakout` | Breakout / Arkanoid |
 | `pacman` | Pac-Man-style 21×21 maze chase — eat dots and power pellets, hunt or flee 4 ghosts |
-| `frogger` | Road-and-river crossing — dodge traffic, ride logs, fill 5 home slots |
-| `sudoku` | 9×9 Sudoku with conflict highlighting, hints, and persistent solve count |
 | `iago` | Othello / Reversi — VBE board with greedy-AI opponent and persistent wins |
 
-> **42 games total** in `/games` — run any from anywhere thanks to PATH.
+> **27 games total** in `/games` — run any from anywhere thanks to PATH.
 
 ### Utilities
 
@@ -333,7 +317,7 @@ Mellivora_OS/
 | Kernel source | Entry file + 22 modular include files |
 | Syscalls | 95 (via `INT 0x80`) |
 | Shell commands | 90+ built-ins, aliases, history (128 entries), tab completion |
-| User programs | 178 assembly apps (124 utilities + 12 Burrows + 42 games) |
+| User programs | 199 assembly apps (145 utilities + 12 Burrows + 42 games) |
 | Bundled samples | 19 (11 C + 6 Perl + 2 BAS) in `/samples` |
 | API libraries | 17 reusable `.inc` modules in `programs/lib/` |
 | Disk image | 2 GB raw HBFS image |

@@ -212,7 +212,7 @@ isr_page_fault:
         mov al, 0x0A
         call vga_putchar
 
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         popad
 
         ; Remove error code from stack and recover to shell
@@ -252,7 +252,7 @@ paging_map_page:
         push esi
         call pmm_alloc_page     ; EAX = new page table phys addr
         test eax, eax
-        jz .map_fail
+        jz .map_alloc_fail
 
         ; Zero the new page table
         push eax
@@ -289,6 +289,14 @@ paging_map_page:
         invlpg [eax]
 
 .map_fail:
+        popad
+        ret
+
+; Phase 1.3: alloc-failure path. We jumped here with 4 extra dwords still
+; on the stack from the PT-allocation prologue (ebx/ecx/edx/esi). Drop them
+; before popad so the original caller-saved registers are restored cleanly.
+.map_alloc_fail:
+        add esp, 16             ; drop pushed esi/edx/ecx/ebx
         popad
         ret
 

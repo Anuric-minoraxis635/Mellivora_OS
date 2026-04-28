@@ -168,7 +168,7 @@ SYS_MALLOC          equ 19
 SYS_FREE            equ 20
 SYS_EXEC            equ 21
 SYS_DISK_READ       equ 22
-SYS_DISK_WRITE      equ 23
+SYS_SBRK            equ 23      ; Adjust program break: EBX=increment -> EAX=old_brk/-1
 
 LINE_BUFFER_SIZE    equ 512
 BATCH_BUFFER_SIZE   equ 32768           ; 32KB max batch script
@@ -202,7 +202,7 @@ RTC_DATA            equ 0x71
 PIT_CH2             equ 0x42
 SPEAKER_PORT        equ 0x61
 
-; New syscall numbers (extending 0-23)
+; New syscall numbers (extending 0-35)
 SYS_BEEP            equ 24
 SYS_DATE            equ 25
 SYS_CHDIR           equ 26

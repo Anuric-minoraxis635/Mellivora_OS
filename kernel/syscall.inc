@@ -11,6 +11,28 @@
 
 SYSCALL_MAX     equ 128         ; Table capacity (0..127)
 
+; --- Phase 1.2: user pointer validation -----------------------------------
+; A valid user pointer must lie in [PROGRAM_BASE, USER_PTR_MAX).
+;   PROGRAM_BASE = 0x00200000  rejects NULL, real-mode IVT/BDA, kernel image
+;   USER_PTR_MAX = 0x08000000  rejects anything beyond the 128 MB identity
+;                              map; catches obviously bogus addresses without
+;                              breaking PMM-allocated user heap pointers.
+USER_PTR_MAX    equ 0x08000000
+
+; validate_user_ptr - sanity-check a single user pointer.
+;   In : EAX = pointer
+;   Out: CF=0 valid, CF=1 invalid; all GPRs preserved (only EFLAGS changes).
+validate_user_ptr:
+        cmp eax, PROGRAM_BASE
+        jb  .vup_bad
+        cmp eax, USER_PTR_MAX
+        jae .vup_bad
+        clc
+        ret
+.vup_bad:
+        stc
+        ret
+
 ; Handler for INT 0x80
 ; Dispatches to the correct syscall handler based on EAX.
 ;---------------------------------------
@@ -196,7 +218,7 @@ sys_exit:
         ; Clear running flag
         mov byte [program_running], 0
         ; Reset color so shell doesn't inherit program's color
-        mov byte [vga_color], COLOR_DEFAULT
+        call vga_reset_color
         ; Ensure interrupts are enabled for the shell
         sti
         ; Return to shell (or desktop if GUI active)
@@ -221,11 +243,22 @@ sys_getchar:
         iretd
 
 sys_print:
+        ; Phase 1.2: reject obviously-bogus user pointers (NULL, kernel range,
+        ; addresses beyond identity-mapped RAM) instead of dereferencing them.
+        push eax
+        mov eax, ebx
+        call validate_user_ptr
+        jc .sp_bad
+        pop eax
         push esi
         mov esi, ebx
         call vga_print
         pop esi
         xor eax, eax
+        iretd
+.sp_bad:
+        pop eax
+        mov eax, -1
         iretd
 
 sys_read_key:
@@ -242,6 +275,7 @@ sys_clear:
 
 sys_setcolor:
         mov [vga_color], bl
+        mov [default_color], bl
         xor eax, eax
         iretd
 
@@ -264,6 +298,13 @@ sys_exec_call:
         ; EBX = pointer to filename
         ; Note: on success, cmd_exec_program never returns (iretd to ring 3)
         ; On failure (program not found), it returns with CF set
+
+        ; Phase 1.2: validate filename pointer before any kernel state changes
+        push eax
+        mov eax, ebx
+        call validate_user_ptr
+        jc .exec_bad_ptr
+        pop eax
 
         ; Save current program as parent for return-after-child-exit
         push esi
@@ -289,6 +330,10 @@ sys_exec_call:
         iretd
 .exec_fail:
         mov byte [parent_active], 0
+        mov eax, -1
+        iretd
+.exec_bad_ptr:
+        pop eax
         mov eax, -1
         iretd
 
@@ -498,7 +543,7 @@ sys_disk_read:
         iretd
 
 ;---------------------------------------
-; SYS_DISK_WRITE (23): Raw disk write
+; sys_disk_write: Raw disk write (kernel-internal, no user syscall slot)
 ; EBX = LBA (low 32 bits), ECX = sector count, EDX = source buffer
 ; Returns: EAX = 0 on success, -1 on error
 ;---------------------------------------

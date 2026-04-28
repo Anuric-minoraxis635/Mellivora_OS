@@ -44,6 +44,8 @@ start:
         je .host_done
         cmp al, 0
         je .host_done
+        cmp ecx, 255            ; Phase 2.1: leave room for NUL in 256-byte buf
+        jge .host_done
         mov [edi + ecx], al
         inc ecx
         inc esi
@@ -62,6 +64,8 @@ start:
         je .path_done
         cmp al, 0
         je .path_done
+        cmp ecx, 511            ; Phase 2.1: leave room for NUL in 512-byte buf
+        jge .path_done
         mov [edi + ecx], al
         inc ecx
         inc esi
@@ -88,6 +92,8 @@ start:
         je .out_done
         cmp al, 0
         je .out_done
+        cmp ecx, 127            ; Phase 2.1: leave room for NUL in 128-byte buf
+        jge .out_done
         mov [edi + ecx], al
         inc ecx
         inc esi
